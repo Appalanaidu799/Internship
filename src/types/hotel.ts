@@ -1,0 +1,99 @@
+export type RiskLevel = 'HIGH' | 'MEDIUM' | 'LOW';
+
+export type BookingStatus = 'Confirmed' | 'Checked-In' | 'Checked-Out' | 'Cancelled';
+
+export type RoomStatus = 'Available' | 'Occupied' | 'Maintenance';
+
+export interface RoomType {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  capacity: number;
+  basePrice: number;
+  amenities: string[];
+  status: 'Active' | 'Inactive';
+  totalInventory: number;
+  sizeSqFt: number;
+  bedType: string;
+  imageTheme: string;
+}
+
+export interface Room {
+  id: string;
+  roomNumber: string;
+  roomTypeId: string;
+  roomTypeName: string;
+  floor: number;
+  price: number;
+  status: RoomStatus;
+  currentGuest?: string;
+  lastCleaned?: string;
+}
+
+export interface Booking {
+  id: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  roomTypeId: string;
+  roomTypeName: string;
+  roomNumber?: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  guests: number;
+  adr: number;
+  totalAmount: number;
+  status: BookingStatus;
+  cancellationProbability: number; // 0-100%
+  cancellationRisk: RiskLevel;
+  leadTimeDays: number;
+  marketSegment: 'Online TA' | 'Direct' | 'Corporate' | 'Groups' | 'Offline TA';
+  depositType: 'No Deposit' | 'Non Refundable' | 'Refundable';
+  createdAt: string;
+  specialRequests?: string;
+}
+
+export interface Customer {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  totalBookings: number;
+  cancelledBookings: number;
+  totalSpend: number;
+  vipStatus: boolean;
+  memberSince: string;
+  lastBookingDate: string;
+}
+
+export interface ManagementUser {
+  id: string;
+  fullName: string;
+  email: string;
+  status: 'Active' | 'Suspended';
+  createdAt: string;
+  lastLogin: string;
+  department: string;
+}
+
+export interface AiInsight {
+  id: string;
+  title: string;
+  category: 'Cancellation Risk' | 'Revenue Opportunity' | 'Occupancy Trend' | 'Room Demand' | 'Customer Behavior';
+  impact: 'HIGH' | 'MEDIUM' | 'INFO';
+  metric: string;
+  description: string;
+  recommendation: string;
+  date: string;
+}
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  type: 'alert' | 'booking' | 'system' | 'ai';
+  read: boolean;
+}

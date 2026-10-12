@@ -1,0 +1,6 @@
+{
+  "name": "Luxery Hotel – AI-Powered Hotel Booking & Intelligence System",
+  "description": "Enterprise hotel booking and intelligence platform featuring predictive cancellation analytics, multi-role dashboards for Admin, Management, and Customers, and intelligent guest assistance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

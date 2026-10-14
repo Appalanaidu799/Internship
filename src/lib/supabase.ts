@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { UserProfile, Role, UserStatus } from '../types/auth';
+import { UserProfile, Role, UserStatus, CustomerProfileData } from '../types/auth';
+import { Booking, Customer, Room, RoomType, RoomStatus, BookingStatus } from '../types/hotel';
 
 export const DEFAULT_SUPABASE_URL = 'https://ksjcdbirvgmhhppzagsq.supabase.co';
 export const DEFAULT_SUPABASE_ANON_KEY =
@@ -18,56 +19,421 @@ export const isSupabaseConfigured = Boolean(
 );
 
 /**
- * Complete SQL to create public.users table in Supabase, enable Row Level Security,
- * and append all initial user records into the table.
+ * Complete SQL to create public.users, public.customers, public.room_types,
+ * public.rooms, and public.bookings tables in Supabase, along with triggers and RLS policies.
  */
-export const SUPABASE_USERS_TABLE_SQL = `-- 1. Create public.users table if it does not exist
+export const SUPABASE_USERS_TABLE_SQL = `-- ==============================================================================
+-- Naidu Hotel: Complete Schema, Triggers, RLS & Seed Data
+-- ==============================================================================
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 1. TABLE: public.users
 CREATE TABLE IF NOT EXISTS public.users (
-  id TEXT PRIMARY KEY,
-  full_name TEXT NOT NULL DEFAULT '',
-  email TEXT NOT NULL UNIQUE,
-  phone TEXT DEFAULT '',
-  role TEXT NOT NULL DEFAULT 'customer',
-  status TEXT NOT NULL DEFAULT 'active',
-  profile_image TEXT DEFAULT '',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  full_name text NOT NULL,
+  email text UNIQUE NOT NULL,
+  phone text,
+  role text NOT NULL CHECK (role IN ('admin', 'management', 'customer')),
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'blocked')),
+  profile_image text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
 );
 
--- 2. Enable Row Level Security (RLS)
+-- 2. TABLE: public.customers
+CREATE TABLE IF NOT EXISTS public.customers (
+  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  customer_code text UNIQUE NOT NULL,
+  full_name text NOT NULL,
+  email text,
+  phone text,
+  date_of_birth date,
+  gender text CHECK (gender IN ('Male', 'Female', 'Non-binary', 'Prefer not to say')),
+  address_line text,
+  city text,
+  state text,
+  postal_code text,
+  country text,
+  emergency_contact_name text,
+  emergency_contact_phone text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_customers_code ON public.customers(customer_code);
+CREATE INDEX IF NOT EXISTS idx_customers_email ON public.customers(email);
+
+-- 3. TABLE: public.room_types
+CREATE TABLE IF NOT EXISTS public.room_types (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text UNIQUE NOT NULL,
+  description text,
+  capacity integer NOT NULL CHECK (capacity > 0),
+  base_price numeric(10,2) NOT NULL CHECK (base_price > 0),
+  amenities jsonb DEFAULT '[]'::jsonb,
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- 4. TABLE: public.rooms
+CREATE TABLE IF NOT EXISTS public.rooms (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_number text UNIQUE NOT NULL,
+  room_type_id uuid REFERENCES public.room_types(id) ON DELETE SET NULL,
+  floor_number integer,
+  status text DEFAULT 'Available' CHECK (status IN ('Available', 'Occupied', 'Maintenance', 'Inactive')),
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rooms_type ON public.rooms(room_type_id);
+CREATE INDEX IF NOT EXISTS idx_rooms_status ON public.rooms(status);
+
+-- 5. TABLE: public.bookings
+CREATE TABLE IF NOT EXISTS public.bookings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  booking_reference text UNIQUE NOT NULL,
+  customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+  room_id uuid REFERENCES public.rooms(id) ON DELETE SET NULL,
+  room_type_id uuid REFERENCES public.room_types(id) ON DELETE RESTRICT,
+  check_in date NOT NULL,
+  check_out date NOT NULL,
+  number_of_guests integer NOT NULL CHECK (number_of_guests > 0),
+  number_of_rooms integer NOT NULL DEFAULT 1 CHECK (number_of_rooms > 0),
+  total_amount numeric(10,2) NOT NULL CHECK (total_amount >= 0),
+  booking_status text NOT NULL DEFAULT 'Confirmed' CHECK (booking_status IN ('Confirmed', 'Checked-In', 'Checked-Out', 'Cancelled')),
+  payment_status text DEFAULT 'Paid' CHECK (payment_status IN ('Pending', 'Paid', 'Refunded', 'Failed')),
+  special_requests text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  CONSTRAINT valid_booking_dates CHECK (check_out > check_in)
+);
+
+CREATE INDEX IF NOT EXISTS idx_bookings_customer ON public.bookings(customer_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_room ON public.bookings(room_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_dates ON public.bookings(check_in, check_out);
+CREATE INDEX IF NOT EXISTS idx_bookings_reference ON public.bookings(booking_reference);
+
+-- Enable Row Level Security (RLS)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.room_types ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 
--- 3. Row Level Security Policies for Public Access
-DROP POLICY IF EXISTS "Allow all public read" ON public.users;
-CREATE POLICY "Allow all public read" ON public.users FOR SELECT USING (true);
+-- Helper: Get user role
+CREATE OR REPLACE FUNCTION public.get_current_user_role()
+RETURNS text AS $$
+  SELECT role FROM public.users
+  WHERE id = auth.uid() OR email = (auth.jwt() ->> 'email')
+  LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
 
-DROP POLICY IF EXISTS "Allow all public insert" ON public.users FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow all public insert" ON public.users FOR INSERT WITH CHECK (true);
+-- Overlapping physical room booking prevention trigger
+CREATE OR REPLACE FUNCTION public.prevent_overlapping_room_bookings()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.room_id IS NOT NULL AND NEW.booking_status IN ('Confirmed', 'Checked-In') THEN
+    IF EXISTS (
+      SELECT 1 FROM public.bookings
+      WHERE room_id = NEW.room_id
+        AND id <> COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid)
+        AND booking_status IN ('Confirmed', 'Checked-In')
+        AND check_in < NEW.check_out
+        AND check_out > NEW.check_in
+    ) THEN
+      RAISE EXCEPTION 'Physical room % is already booked for overlapping dates (% to %)',
+        NEW.room_id, NEW.check_in, NEW.check_out;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-DROP POLICY IF EXISTS "Allow all public update" ON public.users FOR UPDATE USING (true);
-CREATE POLICY "Allow all public update" ON public.users FOR UPDATE USING (true);
+DROP TRIGGER IF EXISTS trg_prevent_overlapping_room_bookings ON public.bookings;
+CREATE TRIGGER trg_prevent_overlapping_room_bookings
+  BEFORE INSERT OR UPDATE OF room_id, check_in, check_out, booking_status ON public.bookings
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_overlapping_room_bookings();
 
--- 4. Append Seed Users into public.users table
-INSERT INTO public.users (id, full_name, email, phone, role, status, profile_image)
-VALUES 
-  ('a0000000-0000-0000-0000-000000000000', 'Appala Naidu', 'appalanaidu.dev@gmail.com', '+91 99000 11223', 'admin', 'active', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'),
-  ('a0000000-0000-0000-0000-000000000001', 'Executive Administrator', 'admin@naiduhotel.com', '+91 99000 11223', 'admin', 'active', ''),
-  ('b0000000-0000-0000-0000-000000000002', 'Deepa Rao', 'manager@naiduhotel.com', '+91 99888 22334', 'management', 'active', ''),
-  ('c0000000-0000-0000-0000-000000000003', 'Rajesh Naidu', 'customer@gmail.com', '+1 (555) 234-5678', 'customer', 'active', '')
-ON CONFLICT (email) DO UPDATE 
-SET full_name = EXCLUDED.full_name,
-    role = EXCLUDED.role,
-    status = EXCLUDED.status,
-    updated_at = NOW();
+-- RLS Policies
+DROP POLICY IF EXISTS "Users public read" ON public.users;
+CREATE POLICY "Users public read" ON public.users FOR SELECT TO anon, authenticated USING (true);
+
+DROP POLICY IF EXISTS "Users insert registration" ON public.users;
+CREATE POLICY "Users insert registration" ON public.users FOR INSERT TO anon, authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Users update own profile" ON public.users;
+CREATE POLICY "Users update own profile" ON public.users FOR UPDATE TO authenticated
+  USING (auth.uid() = id OR public.get_current_user_role() = 'admin');
+
+DROP POLICY IF EXISTS "Customers can read own profile or staff" ON public.customers;
+CREATE POLICY "Customers can read own profile or staff" ON public.customers FOR SELECT TO authenticated
+  USING (id = auth.uid() OR public.get_current_user_role() IN ('admin', 'management'));
+
+DROP POLICY IF EXISTS "Customers can insert own profile" ON public.customers;
+CREATE POLICY "Customers can insert own profile" ON public.customers FOR INSERT TO authenticated
+  WITH CHECK (id = auth.uid() OR public.get_current_user_role() IN ('admin', 'management'));
+
+DROP POLICY IF EXISTS "Customers can update own personal details" ON public.customers;
+CREATE POLICY "Customers can update own personal details" ON public.customers FOR UPDATE TO authenticated
+  USING (id = auth.uid() OR public.get_current_user_role() IN ('admin', 'management'))
+  WITH CHECK (id = auth.uid() OR public.get_current_user_role() IN ('admin', 'management'));
+
+DROP POLICY IF EXISTS "Anyone can view active room types" ON public.room_types;
+CREATE POLICY "Anyone can view active room types" ON public.room_types FOR SELECT TO anon, authenticated
+  USING (is_active = true OR public.get_current_user_role() IN ('admin', 'management'));
+
+DROP POLICY IF EXISTS "Staff can manage room types" ON public.room_types;
+CREATE POLICY "Staff can manage room types" ON public.room_types FOR ALL TO authenticated
+  USING (public.get_current_user_role() IN ('admin', 'management'));
+
+DROP POLICY IF EXISTS "Authenticated can view rooms" ON public.rooms;
+CREATE POLICY "Authenticated can view rooms" ON public.rooms FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Staff can manage physical rooms" ON public.rooms;
+CREATE POLICY "Staff can manage physical rooms" ON public.rooms FOR ALL TO authenticated
+  USING (public.get_current_user_role() IN ('admin', 'management'));
+
+DROP POLICY IF EXISTS "Customers view own bookings or staff view all" ON public.bookings;
+CREATE POLICY "Customers view own bookings or staff view all" ON public.bookings FOR SELECT TO authenticated
+  USING (customer_id = auth.uid() OR public.get_current_user_role() IN ('admin', 'management'));
+
+DROP POLICY IF EXISTS "Customers create bookings with own customer_id" ON public.bookings;
+CREATE POLICY "Customers create bookings with own customer_id" ON public.bookings FOR INSERT TO authenticated
+  WITH CHECK (customer_id = auth.uid() OR public.get_current_user_role() IN ('admin', 'management'));
+
+DROP POLICY IF EXISTS "Customers can cancel own booking or staff manage" ON public.bookings;
+CREATE POLICY "Customers can cancel own booking or staff manage" ON public.bookings FOR UPDATE TO authenticated
+  USING (customer_id = auth.uid() OR public.get_current_user_role() IN ('admin', 'management'));
 `;
 
 // Initial users: purely empty array, all accounts come fresh from Supabase database
 export const SEED_USERS: UserProfile[] = [];
 
-// Helper to manage public.users store in localStorage
+// Local Storage Keys
 export const STORAGE_KEY_USERS = 'naidu_supabase_users_table';
+export const STORAGE_KEY_CUSTOMERS = 'naidu_supabase_customers_table';
+export const STORAGE_KEY_ROOM_TYPES = 'naidu_supabase_room_types_table';
+export const STORAGE_KEY_ROOMS = 'naidu_supabase_rooms_table';
+export const STORAGE_KEY_BOOKINGS = 'naidu_supabase_bookings_table';
 export const STORAGE_KEY_SESSION = 'naidu_supabase_auth_session';
 export const STORAGE_KEY_TABLE_STATUS = 'naidu_supabase_table_status';
+
+// Helper to generate unique customer code e.g. CUS-7A8B9C0D
+export function generateCustomerCode(): string {
+  const chars = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let randomHex = '';
+  for (let i = 0; i < 8; i++) {
+    randomHex += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `CUS-${randomHex}`;
+}
+
+// Helper to generate unique booking reference e.g. BKG-NDU-492184
+export function generateBookingReference(): string {
+  const num = Math.floor(100000 + Math.random() * 900000);
+  return `BKG-NDU-${num}`;
+}
+
+// ==============================================================================
+// SEED INITIAL FALLBACK DATA
+// ==============================================================================
+export const INITIAL_FALLBACK_CUSTOMERS: CustomerProfileData[] = [
+  {
+    id: 'c0000000-0000-0000-0000-000000000003',
+    customer_code: 'CUS-NAIDU001',
+    full_name: 'Rajesh Naidu',
+    email: 'customer@gmail.com',
+    phone: '+1 (555) 234-5678',
+    date_of_birth: '1992-06-15',
+    gender: 'Male',
+    address_line: '742 Evergreen Terrace, Suite 400',
+    city: 'San Francisco',
+    state: 'CA',
+    postal_code: '94107',
+    country: 'United States',
+    emergency_contact_name: 'Priya Naidu',
+    emergency_contact_phone: '+1 (555) 876-5432',
+    created_at: '2025-01-10T08:00:00.000Z',
+    updated_at: '2025-01-10T08:00:00.000Z'
+  }
+];
+
+export const INITIAL_FALLBACK_ROOM_TYPES: RoomType[] = [
+  {
+    id: '11111111-1111-1111-1111-111111111101',
+    name: 'Single Sharing Room',
+    code: 'SGL',
+    description: 'Cozy private room with single bed, ergonomic workspace, and high-speed Wi-Fi.',
+    capacity: 1,
+    basePrice: 120,
+    amenities: ['High-Speed WiFi', 'Workstation Desk', 'Ensuite Shower', 'Air Conditioning'],
+    status: 'Active',
+    totalInventory: 10,
+    sizeSqFt: 220,
+    bedType: 'Single Bed',
+    imageTheme: 'executive'
+  },
+  {
+    id: '11111111-1111-1111-1111-111111111102',
+    name: 'Double Sharing Room',
+    code: 'DBL',
+    description: 'Spacious twin or queen arrangement ideal for couples or traveling partners.',
+    capacity: 2,
+    basePrice: 180,
+    amenities: ['High-Speed WiFi', 'Queen Bed / Twin', 'Smart HDTV', 'Coffee Maker', 'Balcony'],
+    status: 'Active',
+    totalInventory: 15,
+    sizeSqFt: 340,
+    bedType: 'Queen Bed or 2 Twins',
+    imageTheme: 'ocean'
+  },
+  {
+    id: '11111111-1111-1111-1111-111111111103',
+    name: 'Triple Sharing Room',
+    code: 'TRP',
+    description: 'Generously apportioned suite featuring three single beds or king + single with lounge.',
+    capacity: 3,
+    basePrice: 240,
+    amenities: ['High-Speed WiFi', '3 Individual Beds', 'Mini Bar', 'Walk-in Wardrobe', 'Seaside Balcony'],
+    status: 'Active',
+    totalInventory: 8,
+    sizeSqFt: 460,
+    bedType: '3 Single Beds',
+    imageTheme: 'ocean'
+  },
+  {
+    id: '11111111-1111-1111-1111-111111111104',
+    name: 'Deluxe Ocean View',
+    code: 'DLX-OCN',
+    description: 'Uninterrupted panoramic coastline vistas with plush king bedding and private terrace.',
+    capacity: 2,
+    basePrice: 285,
+    amenities: ['Ocean View Balcony', 'King Bed', 'Rain Shower', 'Nespresso Bar', 'Smart 65-inch TV'],
+    status: 'Active',
+    totalInventory: 20,
+    sizeSqFt: 480,
+    bedType: 'California King',
+    imageTheme: 'ocean'
+  },
+  {
+    id: '11111111-1111-1111-1111-111111111105',
+    name: 'Executive Business Suite',
+    code: 'EXE-STE',
+    description: 'Executive lounge access, separate meeting parlor, and complimentary boardroom privileges.',
+    capacity: 4,
+    basePrice: 395,
+    amenities: ['Executive Lounge', 'Private Meeting Table', 'Soaking Tub', 'High-Speed Mesh WiFi', 'Butler Service'],
+    status: 'Active',
+    totalInventory: 12,
+    sizeSqFt: 620,
+    bedType: 'King Bed + Sofa Bed',
+    imageTheme: 'executive'
+  },
+  {
+    id: '11111111-1111-1111-1111-111111111106',
+    name: 'Premier Garden Villa',
+    code: 'GRD-VLA',
+    description: 'Private villa garden enclave with private plunge jacuzzi and secluded sundeck.',
+    capacity: 6,
+    basePrice: 460,
+    amenities: ['Private Plunge Pool', 'Botanical Garden Terrace', 'Full Kitchenette', 'Dual Vanities', 'In-villa Dining'],
+    status: 'Active',
+    totalInventory: 6,
+    sizeSqFt: 850,
+    bedType: '2 King Beds + Daybed',
+    imageTheme: 'garden'
+  },
+  {
+    id: '11111111-1111-1111-1111-111111111107',
+    name: 'Luxery Presidential Penthouse',
+    code: 'PRS-PNT',
+    description: 'Top-floor 3,200 sq ft crowning residence with 360-degree panorama, chef pantry, and 24/7 dedicated concierge.',
+    capacity: 8,
+    basePrice: 850,
+    amenities: ['360 Ocean Panorama', 'Private Elevator Access', 'Chef Kitchen', 'Grand Piano', 'Personal Concierge'],
+    status: 'Active',
+    totalInventory: 2,
+    sizeSqFt: 3200,
+    bedType: '3 King Suites + Nursery',
+    imageTheme: 'presidential'
+  }
+];
+
+export const INITIAL_FALLBACK_ROOMS: Room[] = [
+  { id: '22222222-2222-2222-2222-222222222101', roomNumber: 'Room 101', roomTypeId: '11111111-1111-1111-1111-111111111101', roomTypeName: 'Single Sharing Room', floor: 1, price: 120, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222102', roomNumber: 'Room 102', roomTypeId: '11111111-1111-1111-1111-111111111102', roomTypeName: 'Double Sharing Room', floor: 1, price: 180, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222103', roomNumber: 'Room 103', roomTypeId: '11111111-1111-1111-1111-111111111103', roomTypeName: 'Triple Sharing Room', floor: 1, price: 240, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222201', roomNumber: 'Room 201', roomTypeId: '11111111-1111-1111-1111-111111111104', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222202', roomNumber: 'Room 202', roomTypeId: '11111111-1111-1111-1111-111111111104', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Occupied' },
+  { id: '22222222-2222-2222-2222-222222222301', roomNumber: 'Room 301', roomTypeId: '11111111-1111-1111-1111-111111111105', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222302', roomNumber: 'Room 302', roomTypeId: '11111111-1111-1111-1111-111111111105', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Maintenance' },
+  { id: '22222222-2222-2222-2222-222222222401', roomNumber: 'Villa 401', roomTypeId: '11111111-1111-1111-1111-111111111106', roomTypeName: 'Premier Garden Villa', floor: 4, price: 460, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222501', roomNumber: 'Penthouse 501', roomTypeId: '11111111-1111-1111-1111-111111111107', roomTypeName: 'Luxery Presidential Penthouse', floor: 5, price: 850, status: 'Available' }
+];
+
+export const INITIAL_FALLBACK_BOOKINGS: Booking[] = [
+  {
+    id: 'BKG-NDU-882194',
+    bookingReference: 'BKG-NDU-882194',
+    customerId: 'c0000000-0000-0000-0000-000000000003',
+    customerCode: 'CUS-NAIDU001',
+    customerName: 'Rajesh Naidu',
+    customerEmail: 'customer@gmail.com',
+    customerPhone: '+1 (555) 234-5678',
+    roomTypeId: '11111111-1111-1111-1111-111111111104',
+    roomTypeName: 'Deluxe Ocean View',
+    roomNumber: 'Room 201',
+    checkIn: '2026-10-22',
+    checkOut: '2026-10-26',
+    nights: 4,
+    guests: 2,
+    adr: 285,
+    totalAmount: 1140,
+    status: 'Confirmed',
+    paymentStatus: 'Paid',
+    cancellationProbability: 14,
+    cancellationRisk: 'LOW',
+    leadTimeDays: 16,
+    marketSegment: 'Direct',
+    depositType: 'Refundable',
+    createdAt: '2026-10-06',
+    specialRequests: 'High floor preferred, late arrival around 8 PM.'
+  },
+  {
+    id: 'BKG-NDU-731920',
+    bookingReference: 'BKG-NDU-731920',
+    customerId: 'c0000000-0000-0000-0000-000000000003',
+    customerCode: 'CUS-NAIDU001',
+    customerName: 'Rajesh Naidu',
+    customerEmail: 'customer@gmail.com',
+    customerPhone: '+1 (555) 234-5678',
+    roomTypeId: '11111111-1111-1111-1111-111111111105',
+    roomTypeName: 'Executive Business Suite',
+    roomNumber: 'Room 301',
+    checkIn: '2026-08-10',
+    checkOut: '2026-08-14',
+    nights: 4,
+    guests: 2,
+    adr: 395,
+    totalAmount: 1580,
+    status: 'Checked-Out',
+    paymentStatus: 'Paid',
+    cancellationProbability: 5,
+    cancellationRisk: 'LOW',
+    leadTimeDays: 28,
+    marketSegment: 'Corporate',
+    depositType: 'No Deposit',
+    createdAt: '2026-07-15',
+    specialRequests: 'Quiet room near elevator.'
+  }
+];
+
+// ==============================================================================
+// LOCAL STORAGE DATA ACCESS HELPERS
+// ==============================================================================
 
 export function getStoredUsers(): UserProfile[] {
   try {
@@ -87,6 +453,95 @@ export function saveStoredUsers(users: UserProfile[]) {
     localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
   } catch (e) {
     console.error('Failed to save local users', e);
+  }
+}
+
+export function getStoredCustomers(): CustomerProfileData[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CUSTOMERS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to parse local customers', e);
+  }
+  // Initialize with seed customer if empty
+  saveStoredCustomers(INITIAL_FALLBACK_CUSTOMERS);
+  return INITIAL_FALLBACK_CUSTOMERS;
+}
+
+export function saveStoredCustomers(customers: CustomerProfileData[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(customers));
+  } catch (e) {
+    console.error('Failed to save local customers', e);
+  }
+}
+
+export function getStoredBookings(): Booking[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_BOOKINGS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to parse local bookings', e);
+  }
+  saveStoredBookings(INITIAL_FALLBACK_BOOKINGS);
+  return INITIAL_FALLBACK_BOOKINGS;
+}
+
+export function saveStoredBookings(bookings: Booking[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY_BOOKINGS, JSON.stringify(bookings));
+  } catch (e) {
+    console.error('Failed to save local bookings', e);
+  }
+}
+
+export function getStoredRoomTypes(): RoomType[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ROOM_TYPES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to parse local room types', e);
+  }
+  saveStoredRoomTypes(INITIAL_FALLBACK_ROOM_TYPES);
+  return INITIAL_FALLBACK_ROOM_TYPES;
+}
+
+export function saveStoredRoomTypes(rts: RoomType[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY_ROOM_TYPES, JSON.stringify(rts));
+  } catch (e) {
+    console.error('Failed to save local room types', e);
+  }
+}
+
+export function getStoredRooms(): Room[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ROOMS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.error('Failed to parse local rooms', e);
+  }
+  saveStoredRooms(INITIAL_FALLBACK_ROOMS);
+  return INITIAL_FALLBACK_ROOMS;
+}
+
+export function saveStoredRooms(rooms: Room[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY_ROOMS, JSON.stringify(rooms));
+  } catch (e) {
+    console.error('Failed to save local rooms', e);
   }
 }
 
@@ -113,7 +568,7 @@ export function deleteLocalFallbackProfile(email: string) {
   saveStoredUsers(filtered);
 }
 
-// Track whether public.users table exists on remote Supabase DB
+// Track whether public.users / public.customers table exists on remote Supabase DB
 let remoteTableStatus: 'unknown' | 'ready' | 'missing' = (() => {
   const saved = localStorage.getItem(STORAGE_KEY_TABLE_STATUS);
   if (saved === 'ready') return 'ready';
@@ -130,11 +585,13 @@ export function setRemoteTableStatus(status: 'unknown' | 'ready' | 'missing') {
   localStorage.setItem(STORAGE_KEY_TABLE_STATUS, status);
 }
 
-// Emulated Supabase client interface for environments without active live API credentials
+// ==============================================================================
+// MOCK SUPABASE CLIENT (for complete offline resilience & testability)
+// ==============================================================================
 class MockSupabaseClient {
   auth = {
     signInWithPassword: async ({ email }: { email: string; password?: string }) => {
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 100));
       const cleanEmail = email.trim().toLowerCase();
       const users = getStoredUsers();
       const found = users.find(u => u.email.toLowerCase() === cleanEmail);
@@ -170,7 +627,7 @@ class MockSupabaseClient {
     },
 
     signUp: async ({ email, options }: { email: string; password?: string; options?: any }) => {
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 100));
       const cleanEmail = email.trim().toLowerCase();
       const users = getStoredUsers();
       const existing = users.find(u => u.email.toLowerCase() === cleanEmail);
@@ -246,29 +703,63 @@ class MockSupabaseClient {
         return {
           eq: (field: string, value: any) => {
             return {
+              order: () => {
+                return {
+                  then: async (resolve: any) => {
+                    const data = this._getTableData(table);
+                    const filtered = data.filter((item: any) => (item as any)[field] === value);
+                    resolve({ data: filtered, error: null });
+                  }
+                };
+              },
               maybeSingle: async () => {
-                const users = getStoredUsers();
-                const found = users.find(u => (u as any)[field] === value);
+                const data = this._getTableData(table);
+                const found = data.find((item: any) => (item as any)[field] === value);
                 return { data: found || null, error: null };
               },
               single: async () => {
-                const users = getStoredUsers();
-                const found = users.find(u => (u as any)[field] === value);
+                const data = this._getTableData(table);
+                const found = data.find((item: any) => (item as any)[field] === value);
                 return { data: found || null, error: found ? null : { message: 'Not found' } };
+              },
+              then: async (resolve: any) => {
+                const data = this._getTableData(table);
+                const filtered = data.filter((item: any) => (item as any)[field] === value);
+                resolve({ data: filtered, error: null });
               }
             };
           },
           order: () => {
             return {
               then: async (resolve: any) => {
-                const users = getStoredUsers();
-                resolve({ data: users, error: null });
+                const data = this._getTableData(table);
+                resolve({ data, error: null });
+              }
+            };
+          },
+          limit: (n: number) => {
+            return {
+              then: async (resolve: any) => {
+                const data = this._getTableData(table);
+                resolve({ data: data.slice(0, n), error: null });
               }
             };
           },
           then: async (resolve: any) => {
-            const users = getStoredUsers();
-            resolve({ data: users, error: null });
+            const data = this._getTableData(table);
+            resolve({ data, error: null });
+          }
+        };
+      },
+
+      insert: (payload: any) => {
+        return {
+          then: async (resolve: any) => {
+            const data = this._getTableData(table);
+            const items = Array.isArray(payload) ? payload : [payload];
+            data.unshift(...items);
+            this._saveTableData(table, data);
+            resolve({ data: items, error: null });
           }
         };
       },
@@ -276,22 +767,89 @@ class MockSupabaseClient {
       upsert: (payload: any) => {
         return {
           then: async (resolve: any) => {
-            const users = getStoredUsers();
+            const data = this._getTableData(table);
             const items = Array.isArray(payload) ? payload : [payload];
-            items.forEach(item => {
-              const idx = users.findIndex(u => u.email.toLowerCase() === item.email?.toLowerCase());
+            items.forEach((item: any) => {
+              const idx = data.findIndex((d: any) => d.id === item.id || (item.email && d.email === item.email));
               if (idx >= 0) {
-                users[idx] = { ...users[idx], ...item };
+                data[idx] = { ...data[idx], ...item };
               } else {
-                users.push(item);
+                data.push(item);
               }
             });
-            saveStoredUsers(users);
+            this._saveTableData(table, data);
             resolve({ data: items, error: null });
+          }
+        };
+      },
+
+      update: (payload: any) => {
+        return {
+          eq: (field: string, value: any) => {
+            return {
+              then: async (resolve: any) => {
+                const data = this._getTableData(table);
+                const updated = data.map((d: any) => (d[field] === value ? { ...d, ...payload } : d));
+                this._saveTableData(table, updated);
+                resolve({ data: updated, error: null });
+              }
+            };
+          }
+        };
+      },
+
+      delete: () => {
+        return {
+          eq: (field: string, value: any) => {
+            return {
+              then: async (resolve: any) => {
+                const data = this._getTableData(table);
+                const filtered = data.filter((d: any) => d[field] !== value);
+                this._saveTableData(table, filtered);
+                resolve({ data: filtered, error: null });
+              }
+            };
           }
         };
       }
     };
+  }
+
+  private _getTableData(table: string): any[] {
+    switch (table) {
+      case 'users':
+        return getStoredUsers();
+      case 'customers':
+        return getStoredCustomers();
+      case 'bookings':
+        return getStoredBookings();
+      case 'room_types':
+        return getStoredRoomTypes();
+      case 'rooms':
+        return getStoredRooms();
+      default:
+        return [];
+    }
+  }
+
+  private _saveTableData(table: string, data: any[]) {
+    switch (table) {
+      case 'users':
+        saveStoredUsers(data);
+        break;
+      case 'customers':
+        saveStoredCustomers(data);
+        break;
+      case 'bookings':
+        saveStoredBookings(data);
+        break;
+      case 'room_types':
+        saveStoredRoomTypes(data);
+        break;
+      case 'rooms':
+        saveStoredRooms(data);
+        break;
+    }
   }
 }
 
@@ -300,10 +858,451 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : (new MockSupabaseClient() as unknown as SupabaseClient);
 
+// ==============================================================================
+// CUSTOMER IDENTITY & PROFILE SERVICES
+// ==============================================================================
+
 /**
- * Check whether the public.users table exists in the Supabase database.
- * Does not spam non-existent RPCs or repeat failing queries.
+ * Fetch a customer's profile by their permanent Supabase Auth UUID.
+ * Never uses raw email lookup alone.
  */
+export async function fetchCustomerProfileFromDatabase(userId: string): Promise<CustomerProfileData | null> {
+  if (!userId) return null;
+
+  // 1. Try real Supabase if configured
+  if (isSupabaseConfigured && remoteTableStatus !== 'missing') {
+    try {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!error && data) {
+        // Save fresh copy in local storage cache
+        const all = getStoredCustomers();
+        const idx = all.findIndex(c => c.id === userId);
+        if (idx >= 0) all[idx] = data;
+        else all.push(data);
+        saveStoredCustomers(all);
+        return data as CustomerProfileData;
+      }
+
+      if (error && (error.message?.includes('does not exist') || (error as any).code === 'PGRST205' || (error as any).code === '42P01')) {
+        setRemoteTableStatus('missing');
+      }
+    } catch (e) {
+      console.warn('Notice querying Supabase customers table:', e);
+    }
+  }
+
+  // 2. Fallback to local persistent storage
+  const localCustomers = getStoredCustomers();
+  const found = localCustomers.find(c => c.id === userId);
+  return found || null;
+}
+
+/**
+ * Ensures a customer profile exists for an authenticated Supabase user.
+ * If missing, generates a permanent human-readable customer_code and creates the record.
+ * Never creates duplicates.
+ */
+export async function ensureCustomerProfileExists(user: {
+  id: string;
+  email: string;
+  fullName?: string;
+  phone?: string;
+}): Promise<CustomerProfileData> {
+  if (!user.id) {
+    throw new Error('User ID is required to ensure customer profile.');
+  }
+
+  // 1. Check if profile already exists in DB or local
+  const existing = await fetchCustomerProfileFromDatabase(user.id);
+  if (existing) {
+    return existing;
+  }
+
+  // Also check local store
+  const localCustomers = getStoredCustomers();
+  const localFound = localCustomers.find(c => c.id === user.id);
+  if (localFound) {
+    return localFound;
+  }
+
+  // 2. Generate permanent unique customer code
+  const code = generateCustomerCode();
+  const newProfile: CustomerProfileData = {
+    id: user.id,
+    customer_code: code,
+    full_name: user.fullName || user.email.split('@')[0],
+    email: user.email.toLowerCase().trim(),
+    phone: user.phone || '',
+    date_of_birth: undefined,
+    gender: 'Prefer not to say',
+    address_line: '',
+    city: '',
+    state: '',
+    postal_code: '',
+    country: '',
+    emergency_contact_name: '',
+    emergency_contact_phone: '',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  // Save to local storage immediately
+  localCustomers.push(newProfile);
+  saveStoredCustomers(localCustomers);
+
+  // 3. Upsert into Supabase public.customers if configured
+  if (isSupabaseConfigured && remoteTableStatus !== 'missing') {
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .upsert(newProfile, { onConflict: 'id' });
+
+      if (error && (error.message?.includes('does not exist') || (error as any).code === 'PGRST205')) {
+        setRemoteTableStatus('missing');
+      }
+    } catch (e) {
+      console.warn('Notice creating customer profile in Supabase:', e);
+    }
+  }
+
+  return newProfile;
+}
+
+/**
+ * Updates permitted personal details in a customer's profile.
+ * Customers CANNOT change their id, customer_code, or role.
+ */
+export async function syncCustomerProfileToDatabase(
+  profileUpdate: Partial<CustomerProfileData> & { id: string }
+): Promise<{ success: boolean; data?: CustomerProfileData; error?: string }> {
+  const { id } = profileUpdate;
+  if (!id) return { success: false, error: 'Customer UUID is required.' };
+
+  const current = (await fetchCustomerProfileFromDatabase(id)) || (await ensureCustomerProfileExists({ id, email: profileUpdate.email || '' }));
+
+  // Sanitize: do not allow modifying primary key or customer_code
+  const updatedProfile: CustomerProfileData = {
+    ...current,
+    full_name: profileUpdate.full_name !== undefined ? profileUpdate.full_name.trim() : current.full_name,
+    phone: profileUpdate.phone !== undefined ? profileUpdate.phone.trim() : current.phone,
+    date_of_birth: profileUpdate.date_of_birth !== undefined ? profileUpdate.date_of_birth : current.date_of_birth,
+    gender: profileUpdate.gender !== undefined ? profileUpdate.gender : current.gender,
+    address_line: profileUpdate.address_line !== undefined ? profileUpdate.address_line.trim() : current.address_line,
+    city: profileUpdate.city !== undefined ? profileUpdate.city.trim() : current.city,
+    state: profileUpdate.state !== undefined ? profileUpdate.state.trim() : current.state,
+    postal_code: profileUpdate.postal_code !== undefined ? profileUpdate.postal_code.trim() : current.postal_code,
+    country: profileUpdate.country !== undefined ? profileUpdate.country.trim() : current.country,
+    emergency_contact_name: profileUpdate.emergency_contact_name !== undefined ? profileUpdate.emergency_contact_name.trim() : current.emergency_contact_name,
+    emergency_contact_phone: profileUpdate.emergency_contact_phone !== undefined ? profileUpdate.emergency_contact_phone.trim() : current.emergency_contact_phone,
+    updated_at: new Date().toISOString()
+  };
+
+  // 1. Update local storage
+  const localCustomers = getStoredCustomers();
+  const idx = localCustomers.findIndex(c => c.id === id);
+  if (idx >= 0) {
+    localCustomers[idx] = updatedProfile;
+  } else {
+    localCustomers.push(updatedProfile);
+  }
+  saveStoredCustomers(localCustomers);
+
+  // 2. Also keep public.users full_name & phone in sync
+  const users = getStoredUsers();
+  const uIdx = users.findIndex(u => u.id === id);
+  if (uIdx >= 0) {
+    users[uIdx].full_name = updatedProfile.full_name;
+    users[uIdx].phone = updatedProfile.phone;
+    users[uIdx].updated_at = updatedProfile.updated_at;
+    saveStoredUsers(users);
+  }
+
+  // 3. Upsert into Supabase public.customers
+  if (isSupabaseConfigured && remoteTableStatus !== 'missing') {
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .upsert(updatedProfile, { onConflict: 'id' });
+
+      if (error) {
+        if (error.message?.includes('does not exist') || (error as any).code === 'PGRST205') {
+          setRemoteTableStatus('missing');
+        }
+        return { success: true, data: updatedProfile, error: error.message };
+      }
+
+      // Sync name into public.users in Supabase too
+      await supabase
+        .from('users')
+        .update({
+          full_name: updatedProfile.full_name,
+          phone: updatedProfile.phone,
+          updated_at: updatedProfile.updated_at
+        })
+        .eq('id', id);
+
+      return { success: true, data: updatedProfile };
+    } catch (e: any) {
+      return { success: true, data: updatedProfile, error: e?.message };
+    }
+  }
+
+  return { success: true, data: updatedProfile };
+}
+
+// ==============================================================================
+// BOOKINGS & ROOM INVENTORY SERVICES
+// ==============================================================================
+
+/**
+ * Fetch bookings for a specific customer ID from Supabase (or local fallback).
+ * Enforces customer-specific query boundary.
+ */
+export async function fetchCustomerBookingsFromDatabase(customerId: string): Promise<Booking[]> {
+  if (!customerId) return [];
+
+  if (isSupabaseConfigured && remoteTableStatus !== 'missing') {
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        // Map database records to frontend Booking interface
+        const roomTypes = getStoredRoomTypes();
+        const rooms = getStoredRooms();
+        const mapped: Booking[] = data.map((b: any) => {
+          const rt = roomTypes.find(t => t.id === b.room_type_id);
+          const rm = rooms.find(r => r.id === b.room_id);
+          return {
+            id: b.booking_reference || b.id,
+            bookingReference: b.booking_reference,
+            customerId: b.customer_id,
+            roomTypeId: b.room_type_id,
+            roomTypeName: rt?.name || 'Selected Suite',
+            roomId: b.room_id,
+            roomNumber: rm?.roomNumber || 'Assigned at Check-In',
+            customerName: b.customer_name || 'Guest',
+            customerEmail: b.customer_email || '',
+            checkIn: b.check_in,
+            checkOut: b.check_out,
+            nights: Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24))),
+            guests: b.number_of_guests,
+            adr: Number(b.total_amount) / Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24))),
+            totalAmount: Number(b.total_amount),
+            status: b.booking_status as BookingStatus,
+            paymentStatus: b.payment_status || 'Paid',
+            cancellationProbability: 12,
+            cancellationRisk: 'LOW',
+            leadTimeDays: 14,
+            marketSegment: 'Direct',
+            depositType: 'Refundable',
+            createdAt: b.created_at ? b.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+            specialRequests: b.special_requests || ''
+          };
+        });
+
+        // Merge with local storage cache
+        const allBookings = getStoredBookings();
+        const otherBookings = allBookings.filter(b => b.customerId !== customerId);
+        saveStoredBookings([...mapped, ...otherBookings]);
+        return mapped;
+      }
+    } catch (e) {
+      console.warn('Notice querying Supabase bookings table:', e);
+    }
+  }
+
+  // Fallback to local storage bookings matching customerId
+  const allBookings = getStoredBookings();
+  const customerBookings = allBookings.filter(b => b.customerId === customerId);
+  return customerBookings;
+}
+
+/**
+ * Create a new customer booking in Supabase public.bookings table (and local storage).
+ * Validates check-in/out dates, guest count against room capacity, and availability.
+ */
+export async function createBookingInDatabase(bookingData: {
+  customerId: string;
+  customerCode?: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  roomTypeId: string;
+  roomTypeName: string;
+  roomId?: string;
+  roomNumber?: string;
+  checkIn: string;
+  checkOut: string;
+  guests: number;
+  nights: number;
+  adr: number;
+  specialRequests?: string;
+}): Promise<{ success: boolean; booking?: Booking; error?: string }> {
+  const { customerId, roomTypeId, checkIn, checkOut, guests, nights, adr } = bookingData;
+
+  // 1. Validation
+  if (!customerId) {
+    return { success: false, error: 'Authentication required: customer identity missing.' };
+  }
+
+  const d1 = new Date(checkIn);
+  const d2 = new Date(checkOut);
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) {
+    return { success: false, error: 'Invalid check-in or check-out date.' };
+  }
+
+  if (d2 <= d1) {
+    return { success: false, error: 'Check-out date must be strictly after check-in date.' };
+  }
+
+  const roomTypes = getStoredRoomTypes();
+  const targetRt = roomTypes.find(rt => rt.id === roomTypeId);
+  if (targetRt && guests > targetRt.capacity) {
+    return {
+      success: false,
+      error: `Selected room capacity (${targetRt.capacity} guests) is exceeded by ${guests} guests.`
+    };
+  }
+
+  // Check physical room overlap if specific room requested
+  if (bookingData.roomId) {
+    const existingBookings = getStoredBookings();
+    const hasOverlap = existingBookings.some(b => {
+      if (b.roomId !== bookingData.roomId) return false;
+      if (b.status === 'Cancelled') return false;
+      return checkIn < b.checkOut && checkOut > b.checkIn;
+    });
+
+    if (hasOverlap) {
+      return {
+        success: false,
+        error: 'The requested physical room is already reserved for the selected dates.'
+      };
+    }
+  }
+
+  // 2. Generate unique human-readable booking reference
+  const bookingRef = generateBookingReference();
+  const totalAmount = adr * nights;
+
+  const newBooking: Booking = {
+    id: bookingRef,
+    bookingReference: bookingRef,
+    customerId,
+    customerCode: bookingData.customerCode || 'CUS-GUEST',
+    customerName: bookingData.customerName,
+    customerEmail: bookingData.customerEmail,
+    customerPhone: bookingData.customerPhone || '',
+    roomTypeId,
+    roomTypeName: bookingData.roomTypeName,
+    roomId: bookingData.roomId,
+    roomNumber: bookingData.roomNumber || 'Assigned at Check-In',
+    checkIn,
+    checkOut,
+    nights,
+    guests,
+    adr,
+    totalAmount,
+    status: 'Confirmed',
+    paymentStatus: 'Paid',
+    cancellationProbability: 10,
+    cancellationRisk: 'LOW',
+    leadTimeDays: Math.max(1, Math.ceil((d1.getTime() - Date.now()) / (1000 * 3600 * 24))),
+    marketSegment: 'Direct',
+    depositType: 'Refundable',
+    createdAt: new Date().toISOString().split('T')[0],
+    specialRequests: bookingData.specialRequests || ''
+  };
+
+  // 3. Save to local storage
+  const allBookings = getStoredBookings();
+  allBookings.unshift(newBooking);
+  saveStoredBookings(allBookings);
+
+  // 4. Insert into Supabase public.bookings
+  if (isSupabaseConfigured && remoteTableStatus !== 'missing') {
+    try {
+      const dbPayload = {
+        booking_reference: bookingRef,
+        customer_id: customerId,
+        room_id: bookingData.roomId || null,
+        room_type_id: roomTypeId,
+        check_in: checkIn,
+        check_out: checkOut,
+        number_of_guests: guests,
+        number_of_rooms: 1,
+        total_amount: totalAmount,
+        booking_status: 'Confirmed',
+        payment_status: 'Paid',
+        special_requests: bookingData.specialRequests || ''
+      };
+
+      const { error } = await supabase.from('bookings').insert(dbPayload);
+      if (error) {
+        console.warn('Notice writing to Supabase bookings table:', error);
+      }
+    } catch (e) {
+      console.warn('Supabase booking insert exception:', e);
+    }
+  }
+
+  return { success: true, booking: newBooking };
+}
+
+/**
+ * Cancel a booking in Supabase public.bookings table (and local storage).
+ */
+export async function cancelBookingInDatabase(
+  bookingId: string,
+  customerId?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!bookingId) return { success: false, error: 'Booking identifier is required.' };
+
+  // 1. Update local storage
+  const allBookings = getStoredBookings();
+  const target = allBookings.find(b => b.id === bookingId || b.bookingReference === bookingId);
+  if (target) {
+    target.status = 'Cancelled';
+    saveStoredBookings(allBookings);
+  }
+
+  // 2. Update Supabase
+  if (isSupabaseConfigured && remoteTableStatus !== 'missing') {
+    try {
+      let query = supabase.from('bookings').update({ booking_status: 'Cancelled', updated_at: new Date().toISOString() });
+      if (target?.bookingReference) {
+        query = query.eq('booking_reference', target.bookingReference);
+      } else {
+        query = query.eq('id', bookingId);
+      }
+      if (customerId) {
+        query = query.eq('customer_id', customerId);
+      }
+      const { error } = await query;
+      if (error) {
+        return { success: true, error: error.message };
+      }
+    } catch (e: any) {
+      return { success: true, error: e?.message };
+    }
+  }
+
+  return { success: true };
+}
+
+// ==============================================================================
+// PUBLIC.USERS CHECK & SYNC SERVICES (Existing compatibility)
+// ==============================================================================
+
 export async function checkDatabaseUsersTableStatus(forceCheck = false): Promise<{
   connected: boolean;
   tableExists: boolean;
@@ -318,12 +1317,11 @@ export async function checkDatabaseUsersTableStatus(forceCheck = false): Promise
     };
   }
 
-  // If table already confirmed ready, skip check unless forced
   if (!forceCheck && remoteTableStatus === 'ready') {
     return {
       connected: true,
       tableExists: true,
-      message: 'public.users table is active on Supabase database.'
+      message: 'Supabase database tables are active.'
     };
   }
 
@@ -335,14 +1333,13 @@ export async function checkDatabaseUsersTableStatus(forceCheck = false): Promise
       return {
         connected: true,
         tableExists: true,
-        message: 'public.users table is active on Supabase database.'
+        message: 'Supabase database tables are active.'
       };
     }
 
     const errMsg = error.message || '';
     const errCode = (error as any).code || '';
 
-    // Check if table missing error (PGRST205 or "does not exist")
     if (
       errCode === '42P01' ||
       errCode === 'PGRST205' ||
@@ -353,7 +1350,7 @@ export async function checkDatabaseUsersTableStatus(forceCheck = false): Promise
       return {
         connected: true,
         tableExists: false,
-        message: 'public.users table does not exist in Supabase database yet. Please run the SQL setup script.',
+        message: 'Database tables do not exist in Supabase yet. Please run the SQL setup script.',
         error: errMsg
       };
     }
@@ -374,10 +1371,6 @@ export async function checkDatabaseUsersTableStatus(forceCheck = false): Promise
   }
 }
 
-/**
- * Batch-append / upsert ALL users into the remote Supabase public.users table.
- * Called automatically when table is confirmed ready, or when user clicks Verify & Sync.
- */
 export async function appendAllUsersToRemote(): Promise<{
   success: boolean;
   count: number;
@@ -433,24 +1426,17 @@ export async function appendAllUsersToRemote(): Promise<{
   }
 }
 
-/**
- * Synchronize a user record into both Supabase public.users table and local persistent storage.
- * Ensures the record is ALWAYS saved locally first and the user can proceed without interruption.
- */
 export async function syncUserToDatabase(profile: UserProfile): Promise<{
   success: boolean;
   syncedRemote: boolean;
   error?: string;
 }> {
-  // 1. Always save to local fallback cache immediately
   saveLocalFallbackProfile(profile);
 
-  // 2. If remote table is known to be missing, do NOT fire a failing HTTP query
   if (remoteTableStatus === 'missing') {
     return { success: true, syncedRemote: false, error: 'Table public.users not yet created on remote database.' };
   }
 
-  // 3. If Supabase is configured and table may exist, upsert into public.users table
   if (isSupabaseConfigured) {
     try {
       const payload = {
@@ -485,10 +1471,6 @@ export async function syncUserToDatabase(profile: UserProfile): Promise<{
   return { success: true, syncedRemote: false };
 }
 
-/**
- * Check whether a user email already exists in the database.
- * Explicitly verifies if the user has an existing account before login access.
- */
 export async function checkUserExistsInDatabase(email: string): Promise<{
   exists: boolean;
   user: UserProfile | null;
@@ -499,7 +1481,6 @@ export async function checkUserExistsInDatabase(email: string): Promise<{
     return { exists: false, user: null, source: 'none' };
   }
 
-  // 1. If Supabase is configured and table is not marked missing, query live Supabase database
   if (isSupabaseConfigured && remoteTableStatus !== 'missing') {
     try {
       const { data, error } = await supabase
@@ -524,19 +1505,15 @@ export async function checkUserExistsInDatabase(email: string): Promise<{
       }
 
       if (!error && !data) {
-        // Definitely does not exist in Supabase!
         return { exists: false, user: null, source: 'none' };
       }
 
       if (error && (error.message?.includes('could not find the table') || (error as any).code === 'PGRST205')) {
         setRemoteTableStatus('missing');
       }
-    } catch {
-      // Proceed to local check only if network or error
-    }
+    } catch {}
   }
 
-  // 2. Only if Supabase is completely unreachable or table missing, check local fallback
   const local = getLocalFallbackProfile(cleanEmail);
   if (local) {
     return { exists: true, user: local, source: 'local' };
@@ -545,10 +1522,6 @@ export async function checkUserExistsInDatabase(email: string): Promise<{
   return { exists: false, user: null, source: 'none' };
 }
 
-/**
- * Fetch a user profile by authenticated user ID from Supabase public.users table.
- * Used after successful authentication to retrieve the exact user profile.
- */
 export async function fetchUserProfileById(userId: string): Promise<UserProfile | null> {
   if (!userId) return null;
 
@@ -578,45 +1551,14 @@ export async function fetchUserProfileById(userId: string): Promise<UserProfile 
     } catch {}
   }
 
-  // Fallback: search local users by ID
   const localUsers = getStoredUsers();
   const found = localUsers.find(u => u.id === userId);
   return found || null;
 }
 
-/**
- * Update the user profile ID in public.users to match authenticated Supabase Auth UUID.
- */
-export async function updateUserProfileId(email: string, newId: string): Promise<void> {
-  const cleanEmail = email.trim().toLowerCase();
-  if (!cleanEmail || !newId) return;
-
-  if (isSupabaseConfigured && remoteTableStatus !== 'missing') {
-    try {
-      await supabase
-        .from('users')
-        .update({ id: newId, updated_at: new Date().toISOString() })
-        .eq('email', cleanEmail);
-    } catch {}
-  }
-
-  // Also update local storage
-  const localUsers = getStoredUsers();
-  const idx = localUsers.findIndex(u => u.email.toLowerCase() === cleanEmail);
-  if (idx >= 0) {
-    localUsers[idx].id = newId;
-    saveStoredUsers(localUsers);
-  }
-}
-
-/**
- * Fetch a user profile by email with local fallback.
- * Avoids sending failing 404 queries if remote table is known to be missing.
- */
 export async function fetchUserFromDatabase(email: string): Promise<UserProfile | null> {
   const cleanEmail = email.trim().toLowerCase();
 
-  // If table is known to not exist remotely, return from local storage without network call
   if (remoteTableStatus === 'missing') {
     return getLocalFallbackProfile(cleanEmail);
   }
@@ -654,9 +1596,6 @@ export async function fetchUserFromDatabase(email: string): Promise<UserProfile 
   return getLocalFallbackProfile(cleanEmail);
 }
 
-/**
- * Get all users merged from Supabase public.users table and local storage.
- */
 export async function getAllDatabaseUsers(): Promise<UserProfile[]> {
   const localUsers = getStoredUsers();
 

@@ -1,5 +1,21 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase, syncUserToDatabase, saveLocalFallbackProfile, deleteLocalFallbackProfile, getRemoteTableStatus } from '../lib/supabase';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import {
+  supabase,
+  syncUserToDatabase,
+  saveLocalFallbackProfile,
+  deleteLocalFallbackProfile,
+  getRemoteTableStatus,
+  getStoredCustomers,
+  getStoredBookings,
+  getStoredRoomTypes,
+  getStoredRooms,
+  getStoredUsers,
+  fetchCustomerBookingsFromDatabase,
+  createBookingInDatabase,
+  cancelBookingInDatabase,
+  isSupabaseConfigured
+} from '../lib/supabase';
+import { useAuth } from './AuthContext';
 import {
   RoomType,
   Room,
@@ -14,13 +30,9 @@ import {
 import {
   INITIAL_ROOM_TYPES,
   INITIAL_ROOMS,
-  INITIAL_BOOKINGS,
-  INITIAL_CUSTOMERS,
   INITIAL_MANAGEMENT_USERS,
   AI_INSIGHTS,
-  MOCK_NOTIFICATIONS,
-  CUSTOMER_ACTIVE_BOOKING,
-  CUSTOMER_PAST_BOOKINGS
+  MOCK_NOTIFICATIONS
 } from '../data/mockData';
 
 interface HotelContextType {
@@ -33,7 +45,7 @@ interface HotelContextType {
   notifications: NotificationItem[];
   customerBookings: Booking[];
   activeCustomerBooking: Booking | null;
-  // Mutation methods for interactive frontend:
+  // Mutation methods:
   addManagementUser: (user: { fullName: string; email: string; temporaryPassword?: string }) => void;
   deleteManagementUser: (id: string) => void;
   updateRoomStatus: (roomId: string, status: RoomStatus) => void;
@@ -41,7 +53,7 @@ interface HotelContextType {
   updateRoomType: (id: string, updated: Partial<RoomType>) => void;
   deleteRoomType: (id: string) => void;
   addRoom: (room: Omit<Room, 'id'>) => void;
-  cancelBooking: (bookingId: string) => void;
+  cancelBooking: (bookingId: string) => Promise<void>;
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
   createCustomerBooking: (bookingData: {
     roomTypeId: string;
@@ -52,7 +64,8 @@ interface HotelContextType {
     nights: number;
     adr: number;
     specialRequests?: string;
-  }) => Booking;
+  }) => Promise<Booking>;
+  refreshCustomerBookings: () => Promise<void>;
   markNotificationAsRead: (id: string) => void;
   dismissNotification: (id: string) => void;
 }
@@ -60,19 +73,83 @@ interface HotelContextType {
 const HotelContext = createContext<HotelContextType | undefined>(undefined);
 
 export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [roomTypes, setRoomTypes] = useState<RoomType[]>(INITIAL_ROOM_TYPES);
-  const [rooms, setRooms] = useState<Room[]>(INITIAL_ROOMS);
-  const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
-  const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
+  const { user, customerProfile } = useAuth();
+
+  const [roomTypes, setRoomTypes] = useState<RoomType[]>(() => getStoredRoomTypes());
+  const [rooms, setRooms] = useState<Room[]>(() => getStoredRooms());
+  const [bookings, setBookings] = useState<Booking[]>(() => getStoredBookings());
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [managementUsers, setManagementUsers] = useState<ManagementUser[]>(INITIAL_MANAGEMENT_USERS);
   const [insights] = useState<AiInsight[]>(AI_INSIGHTS);
   const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
-  const [customerBookings, setCustomerBookings] = useState<Booking[]>([
-    CUSTOMER_ACTIVE_BOOKING,
-    ...CUSTOMER_PAST_BOOKINGS
-  ]);
+  const [customerBookings, setCustomerBookings] = useState<Booking[]>([]);
 
-  const activeCustomerBooking = customerBookings.find(b => b.status === 'Confirmed') || null;
+  // Synchronize customer-specific bookings based on currently authenticated customer
+  const refreshCustomerBookings = useCallback(async () => {
+    if (!user || user.role !== 'customer') {
+      setCustomerBookings([]);
+      return;
+    }
+
+    try {
+      const bList = await fetchCustomerBookingsFromDatabase(user.id);
+      setCustomerBookings(bList);
+    } catch (e) {
+      console.warn('Notice fetching customer bookings:', e);
+      const all = getStoredBookings();
+      setCustomerBookings(all.filter(b => b.customerId === user.id));
+    }
+  }, [user]);
+
+  useEffect(() => {
+    refreshCustomerBookings();
+  }, [refreshCustomerBookings]);
+
+  // Synchronize customer directory with registered customer profiles and real live booking data
+  useEffect(() => {
+    const storedCustomers = getStoredCustomers();
+    const storedBookings = getStoredBookings();
+
+    const mappedCustomers: Customer[] = storedCustomers.map(sc => {
+      const custBookings = storedBookings.filter(
+        b => b.customerId === sc.id || (b.customerEmail && b.customerEmail.toLowerCase() === sc.email?.toLowerCase())
+      );
+      const totalBookings = custBookings.length;
+      const cancelledBookings = custBookings.filter(b => b.status === 'Cancelled').length;
+      const totalSpend = custBookings
+        .filter(b => b.status !== 'Cancelled')
+        .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+      const lastBooking = custBookings[0]?.createdAt || sc.created_at?.split('T')[0] || '2026-10-01';
+
+      return {
+        id: sc.id,
+        customerCode: sc.customer_code,
+        fullName: sc.full_name,
+        email: sc.email,
+        phone: sc.phone || '',
+        dateOfBirth: sc.date_of_birth,
+        gender: sc.gender,
+        address: sc.address_line,
+        city: sc.city,
+        state: sc.state,
+        country: sc.country,
+        emergencyContactName: sc.emergency_contact_name,
+        emergencyContactPhone: sc.emergency_contact_phone,
+        totalBookings,
+        cancelledBookings,
+        totalSpend,
+        vipStatus: totalSpend > 2000 || totalBookings >= 3,
+        memberSince: sc.created_at ? sc.created_at.split('T')[0] : '2025-01-10',
+        lastBookingDate: lastBooking
+      };
+    });
+
+    setCustomers(mappedCustomers);
+  }, [customerBookings, bookings]);
+
+  // Active customer booking for customer overview
+  const activeCustomerBooking =
+    customerBookings.find(b => b.status === 'Confirmed' || b.status === 'Checked-In') || null;
 
   const addManagementUser = async (userData: { fullName: string; email: string }) => {
     const newUser: ManagementUser = {
@@ -86,7 +163,6 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     setManagementUsers(prev => [newUser, ...prev]);
 
-    // Insert into users table (local + remote if active)
     syncUserToDatabase({
       id: newUser.id,
       full_name: userData.fullName,
@@ -115,9 +191,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateRoomStatus = (roomId: string, status: RoomStatus) => {
-    setRooms(prev =>
-      prev.map(r => (r.id === roomId ? { ...r, status } : r))
-    );
+    setRooms(prev => prev.map(r => (r.id === roomId ? { ...r, status } : r)));
   };
 
   const addRoomType = (roomTypeData: Omit<RoomType, 'id'>) => {
@@ -129,9 +203,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateRoomType = (id: string, updated: Partial<RoomType>) => {
-    setRoomTypes(prev =>
-      prev.map(rt => (rt.id === id ? { ...rt, ...updated } : rt))
-    );
+    setRoomTypes(prev => prev.map(rt => (rt.id === id ? { ...rt, ...updated } : rt)));
   };
 
   const deleteRoomType = (id: string) => {
@@ -146,22 +218,26 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setRooms(prev => [...prev, newRoom]);
   };
 
-  const cancelBooking = (bookingId: string) => {
+  const cancelBooking = async (bookingId: string) => {
+    await cancelBookingInDatabase(bookingId, user?.id);
     setBookings(prev =>
-      prev.map(b => (b.id === bookingId ? { ...b, status: 'Cancelled' } : b))
+      prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status: 'Cancelled' } : b))
     );
     setCustomerBookings(prev =>
-      prev.map(b => (b.id === bookingId ? { ...b, status: 'Cancelled' } : b))
+      prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status: 'Cancelled' } : b))
     );
   };
 
   const updateBookingStatus = (bookingId: string, status: BookingStatus) => {
     setBookings(prev =>
-      prev.map(b => (b.id === bookingId ? { ...b, status } : b))
+      prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status } : b))
+    );
+    setCustomerBookings(prev =>
+      prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status } : b))
     );
   };
 
-  const createCustomerBooking = (data: {
+  const createCustomerBooking = async (data: {
     roomTypeId: string;
     roomTypeName: string;
     checkIn: string;
@@ -170,40 +246,42 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     nights: number;
     adr: number;
     specialRequests?: string;
-  }): Booking => {
-    const newId = `BKG-NDU-${Math.floor(1000 + Math.random() * 9000)}`;
-    const totalAmount = data.adr * data.nights;
-    const newBooking: Booking = {
-      id: newId,
-      customerName: 'Rajesh Naidu',
-      customerEmail: 'customer@gmail.com',
+  }): Promise<Booking> => {
+    const customerId = user?.id || 'c0000000-0000-0000-0000-000000000003';
+    const customerCode = customerProfile?.customer_code || 'CUS-NAIDU001';
+    const customerName = user?.fullName || 'Guest Customer';
+    const customerEmail = user?.email || 'customer@gmail.com';
+    const customerPhone = user?.phone || '';
+
+    const res = await createBookingInDatabase({
+      customerId,
+      customerCode,
+      customerName,
+      customerEmail,
+      customerPhone,
       roomTypeId: data.roomTypeId,
       roomTypeName: data.roomTypeName,
-      roomNumber: 'Assigned at Check-In',
       checkIn: data.checkIn,
       checkOut: data.checkOut,
-      nights: data.nights,
       guests: data.guests,
+      nights: data.nights,
       adr: data.adr,
-      totalAmount,
-      status: 'Confirmed',
-      cancellationProbability: 12,
-      cancellationRisk: 'LOW',
-      leadTimeDays: 14,
-      marketSegment: 'Direct',
-      depositType: 'Refundable',
-      createdAt: new Date().toISOString().split('T')[0],
       specialRequests: data.specialRequests
-    };
+    });
 
+    if (!res.success || !res.booking) {
+      throw new Error(res.error || 'Failed to create reservation.');
+    }
+
+    const newBooking = res.booking;
     setBookings(prev => [newBooking, ...prev]);
     setCustomerBookings(prev => [newBooking, ...prev]);
 
-    // Push notification to management/admin
+    // Push notification to management & admin
     const notif: NotificationItem = {
       id: `notif-${Date.now()}`,
       title: 'New Direct Customer Reservation',
-      message: `${newBooking.customerName} confirmed ${newBooking.roomTypeName} (${data.nights} nights, $${totalAmount}).`,
+      message: `${newBooking.customerName} (${customerCode}) confirmed ${newBooking.roomTypeName} (${data.nights} nights, $${newBooking.totalAmount}). Ref: ${newBooking.bookingReference}`,
       time: 'Just now',
       type: 'booking',
       read: false
@@ -214,9 +292,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const markNotificationAsRead = (id: string) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, read: true } : n))
-    );
+    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
   };
 
   const dismissNotification = (id: string) => {
@@ -245,6 +321,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         cancelBooking,
         updateBookingStatus,
         createCustomerBooking,
+        refreshCustomerBookings,
         markNotificationAsRead,
         dismissNotification
       }}

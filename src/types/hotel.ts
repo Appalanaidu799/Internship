@@ -33,11 +33,15 @@ export interface Room {
 
 export interface Booking {
   id: string;
+  bookingReference?: string;
+  customerId?: string;
+  customerCode?: string;
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
   roomTypeId: string;
   roomTypeName: string;
+  roomId?: string;
   roomNumber?: string;
   checkIn: string;
   checkOut: string;
@@ -46,6 +50,7 @@ export interface Booking {
   adr: number;
   totalAmount: number;
   status: BookingStatus;
+  paymentStatus?: 'Pending' | 'Paid' | 'Refunded' | 'Failed';
   cancellationProbability: number; // 0-100%
   cancellationRisk: RiskLevel;
   leadTimeDays: number;
@@ -56,10 +61,19 @@ export interface Booking {
 }
 
 export interface Customer {
-  id: string;
+  id: string; // UUID references auth.users(id)
+  customerCode?: string;
   fullName: string;
   email: string;
   phone: string;
+  dateOfBirth?: string;
+  gender?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   totalBookings: number;
   cancelledBookings: number;
   totalSpend: number;

@@ -6,11 +6,14 @@ import {
   STORAGE_KEY_SESSION,
   syncUserToDatabase,
   fetchUserFromDatabase,
+  checkUserExistsInDatabase,
   checkDatabaseUsersTableStatus,
   getRemoteTableStatus,
-  isSupabaseConfigured
+  isSupabaseConfigured,
+  ensureCustomerProfileExists,
+  syncCustomerProfileToDatabase
 } from '../lib/supabase';
-import { UserProfile, Role, UserStatus, AuthState } from '../types/auth';
+import { UserProfile, Role, UserStatus, AuthState, CustomerProfileData } from '../types/auth';
 
 export const DEFAULT_ADMIN_EMAIL = 'appalanaidu.dev@gmail.com';
 export const STORAGE_ADMIN_CONFIGURED = 'naidu_admin_setup_completed';
@@ -24,6 +27,8 @@ interface AuthContextType extends AuthState {
   resendConfirmationEmail: (email: string) => Promise<{ success: boolean; message: string; error?: string }>;
   verifyEmailConfirmation: (email: string, token: string) => Promise<{ success: boolean; error?: string; role?: Role }>;
   signInWithGoogle: (customGoogleEmail?: string, customGoogleName?: string) => Promise<{ success: boolean; error?: string; notFound?: boolean; role?: Role }>;
+  checkEmailExists: (email: string) => Promise<{ exists: boolean; role?: Role; source?: string }>;
+  updateCustomerProfile: (data: Partial<CustomerProfileData>) => Promise<{ success: boolean; error?: string }>;
   register: (
     fullName: string,
     email: string,
@@ -50,6 +55,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [authenticatedUser, setAuthenticatedUser] = useState<any | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfileData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAdminConfigured, setIsAdminConfigured] = useState<boolean>(true);
   const [databaseStatus, setDatabaseStatus] = useState<{ connected: boolean; tableExists: boolean; message: string }>({
@@ -217,6 +223,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (profile && profile.status === 'active') {
               setAuthenticatedUser(sessionUser || { id: profile.id, email: cleanEmail });
               setUserProfile(profile);
+              if (profile.role === 'customer') {
+                ensureCustomerProfileExists({
+                  id: profile.id,
+                  email: cleanEmail,
+                  fullName: profile.full_name,
+                  phone: profile.phone
+                }).then(cp => {
+                  if (isMounted) setCustomerProfile(cp);
+                }).catch(() => {});
+              } else {
+                setCustomerProfile(null);
+              }
               localStorage.setItem(
                 STORAGE_KEY_SESSION,
                 JSON.stringify({
@@ -233,6 +251,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               localStorage.removeItem(STORAGE_KEY_SESSION);
               setAuthenticatedUser(null);
               setUserProfile(null);
+              setCustomerProfile(null);
             }
           }
         } else {
@@ -295,6 +314,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (profile && profile.status === 'active') {
           setAuthenticatedUser(session.user);
           setUserProfile(profile);
+          if (profile.role === 'customer') {
+            ensureCustomerProfileExists({
+              id: profile.id,
+              email: userEmail,
+              fullName: profile.full_name,
+              phone: profile.phone
+            }).then(cp => {
+              setCustomerProfile(cp);
+            }).catch(() => {});
+          } else {
+            setCustomerProfile(null);
+          }
           localStorage.setItem(
             STORAGE_KEY_SESSION,
             JSON.stringify({
@@ -483,6 +514,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           setAuthenticatedUser(authData.user);
           setUserProfile(profile);
+
+          if (profile.role === 'customer') {
+            try {
+              const cp = await ensureCustomerProfileExists({
+                id: profile.id,
+                email: cleanEmail,
+                fullName: profile.full_name,
+                phone: profile.phone
+              });
+              setCustomerProfile(cp);
+            } catch {}
+          } else {
+            setCustomerProfile(null);
+          }
+
           setIsLoading(false);
 
           return {
@@ -755,6 +801,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         saveLocalFallbackProfile(profilePayload);
 
+        // Also initialize public.customers profile immediately
+        const cp = await ensureCustomerProfileExists({
+          id: profilePayload.id,
+          email: cleanEmail,
+          fullName: cleanFullName,
+          phone: cleanPhone
+        });
+
         // 3. If session returned immediately (email confirmation disabled or auto-confirmed)
         if (signUpData?.session) {
           localStorage.setItem(
@@ -769,6 +823,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           setAuthenticatedUser(authUser);
           setUserProfile(profilePayload);
+          setCustomerProfile(cp);
           setIsLoading(false);
 
           return {
@@ -885,6 +940,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Check if email exists in database
+  const checkEmailExists = useCallback(async (emailToCheck: string): Promise<{ exists: boolean; role?: Role; source?: string }> => {
+    try {
+      const result = await checkUserExistsInDatabase(emailToCheck);
+      return {
+        exists: result.exists,
+        role: result.user?.role,
+        source: result.source
+      };
+    } catch {
+      return { exists: false };
+    }
+  }, []);
+
   // Logout handler
   const logout = async () => {
     setIsLoading(true);
@@ -897,8 +966,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem(STORAGE_KEY_SESSION);
     setAuthenticatedUser(null);
     setUserProfile(null);
+    setCustomerProfile(null);
     setIsLoading(false);
   };
+
+  // Update Customer Profile handler
+  const updateCustomerProfile = useCallback(
+    async (data: Partial<CustomerProfileData>): Promise<{ success: boolean; error?: string }> => {
+      const targetId = customerProfile?.id || userProfile?.id;
+      if (!targetId) {
+        return { success: false, error: 'No active authenticated user session.' };
+      }
+
+      try {
+        const res = await syncCustomerProfileToDatabase({
+          ...data,
+          id: targetId
+        });
+
+        if (res.data) {
+          setCustomerProfile(res.data);
+          if (data.full_name) {
+            setUserProfile(prev => prev ? { ...prev, full_name: data.full_name! } : null);
+          }
+        }
+
+        return { success: res.success, error: res.error };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to update profile.' };
+      }
+    },
+    [customerProfile, userProfile]
+  );
 
   const value: AuthContextType = {
     isAuthenticated: Boolean(authenticatedUser && userProfile && userProfile.status === 'active'),
@@ -915,6 +1014,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       : null,
     userProfile,
+    customerProfile,
     role: userProfile?.role || null,
     isLoading,
     authenticatedUser,
@@ -925,6 +1025,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     resendConfirmationEmail,
     verifyEmailConfirmation,
     signInWithGoogle,
+    checkEmailExists,
+    updateCustomerProfile,
     register,
     registerWithGoogle,
     logout,

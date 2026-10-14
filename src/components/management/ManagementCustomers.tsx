@@ -9,7 +9,12 @@ export const ManagementCustomers: React.FC = () => {
   const filtered = customers.filter(c => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
-    return c.fullName.toLowerCase().includes(q) || c.email.toLowerCase().includes(q);
+    return (
+      c.fullName.toLowerCase().includes(q) ||
+      c.email.toLowerCase().includes(q) ||
+      (c.customerCode && c.customerCode.toLowerCase().includes(q)) ||
+      c.phone.includes(q)
+    );
   });
 
   return (
@@ -19,18 +24,18 @@ export const ManagementCustomers: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">Guest Stay Records & History</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Operational customer log for front desk reception, VIP preferences, and room allocations.
+            Operational customer log for front desk reception, verified Customer IDs, VIP preferences, and room allocations.
           </p>
         </div>
       </div>
 
       {/* Search */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs max-w-sm">
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs max-w-md">
         <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search guest by name or email..."
+            placeholder="Search by Customer ID (CUS-...), name, or email..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -44,6 +49,7 @@ export const ManagementCustomers: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[10px] tracking-wider">
               <tr>
+                <th className="py-3 px-4">Customer ID</th>
                 <th className="py-3 px-4">Guest</th>
                 <th className="py-3 px-4">Email</th>
                 <th className="py-3 px-4">Phone</th>
@@ -55,6 +61,11 @@ export const ManagementCustomers: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {filtered.map(c => (
                 <tr key={c.id} className="hover:bg-slate-50/80">
+                  <td className="py-3.5 px-4 font-mono font-bold text-blue-700">
+                    <span className="bg-blue-50 border border-blue-200 px-2 py-0.5 rounded text-[11px]">
+                      {c.customerCode || 'CUS-NAIDU001'}
+                    </span>
+                  </td>
                   <td className="py-3.5 px-4 font-semibold text-slate-900 flex items-center gap-2">
                     <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-800 font-bold flex items-center justify-center text-xs">
                       {c.fullName.charAt(0)}
@@ -62,7 +73,7 @@ export const ManagementCustomers: React.FC = () => {
                     <span>{c.fullName}</span>
                   </td>
                   <td className="py-3.5 px-4 font-mono text-slate-600">{c.email}</td>
-                  <td className="py-3.5 px-4 font-mono text-slate-600">{c.phone}</td>
+                  <td className="py-3.5 px-4 font-mono text-slate-600">{c.phone || '—'}</td>
                   <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-900">{c.totalBookings}</td>
                   <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">${c.totalSpend.toLocaleString()}</td>
                   <td className="py-3.5 px-4 text-center">

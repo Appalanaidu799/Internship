@@ -28,7 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentPageTitle = 'Dashboard',
   onSearchChange
 }) => {
-  const { user, logout, refreshProfile } = useAuth();
+  const { user, customerProfile, logout, refreshProfile } = useAuth();
   const { notifications } = useHotel();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -154,7 +154,7 @@ export const Header: React.FC<HeaderProps> = ({
                   {user?.fullName || 'User'}
                 </p>
                 <p className="text-[10px] text-slate-500 leading-tight truncate max-w-[130px]">
-                  {user?.email}
+                  {customerProfile?.customer_code ? customerProfile.customer_code : user?.email}
                 </p>
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
@@ -165,9 +165,16 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="px-4 py-2.5">
                   <p className="text-xs font-bold text-slate-900">{user?.fullName}</p>
                   <p className="text-[11px] text-slate-500 font-mono truncate">{user?.email}</p>
+                  {customerProfile?.customer_code && (
+                    <div className="mt-1">
+                      <span className="inline-block text-[10px] font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                        Customer ID: {customerProfile.customer_code}
+                      </span>
+                    </div>
+                  )}
                   <div className="mt-2 flex items-center gap-2">
                     {user && getRoleBadge(user.role)}
-                    <span className="text-[10px] text-slate-400 font-mono">public.users</span>
+                    <span className="text-[10px] text-slate-400 font-mono">public.customers</span>
                   </div>
                 </div>
 

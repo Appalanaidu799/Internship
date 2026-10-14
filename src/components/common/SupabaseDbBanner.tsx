@@ -80,13 +80,13 @@ export const SupabaseDbBanner: React.FC<SupabaseDbBannerProps> = ({ alwaysVisibl
           </div>
           <div>
             <div className="font-bold text-slate-900 flex items-center gap-2">
-              <span>Supabase Database Notice: Table <code>public.users</code> Setup</span>
+              <span>Supabase Database Setup: Customers, Rooms & Bookings Schema</span>
               <span className="text-[10px] font-mono px-1.5 py-0.5 bg-amber-200/60 text-amber-900 rounded font-semibold">
                 {projectRef}
               </span>
             </div>
             <p className="text-slate-600 mt-0.5">
-              The remote Supabase database does not have the <code>public.users</code> table created yet. Local sessions & logins continue working seamlessly, and you can initialize the remote DB with 1-click.
+              The remote Supabase database requires the public schema tables (<code>users</code>, <code>customers</code>, <code>room_types</code>, <code>rooms</code>, <code>bookings</code>). Copy the idempotent SQL script and execute it in your Supabase SQL Editor.
             </p>
             {statusMsg && (
               <p className={`mt-1 font-semibold ${statusMsg.includes('active') ? 'text-emerald-700' : 'text-amber-800'}`}>

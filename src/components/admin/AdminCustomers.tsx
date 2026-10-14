@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Users, Search, Star, Mail, Phone, Calendar, DollarSign, ShieldCheck } from 'lucide-react';
+import { Users, Search, Star, Mail, Phone, Calendar, DollarSign, ShieldCheck, RefreshCw } from 'lucide-react';
 import { useHotel } from '../../context/HotelContext';
 import { Customer } from '../../types/hotel';
 import { Modal } from '../common/Modal';
 
 export const AdminCustomers: React.FC = () => {
-  const { customers, bookings } = useHotel();
+  const { customers, bookings, refreshAllData, isDatabaseSyncing } = useHotel();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
@@ -34,8 +34,19 @@ export const AdminCustomers: React.FC = () => {
             Profiles, unique Customer IDs, stay frequencies, aggregate folio expenditures, and loyalty recognition.
           </p>
         </div>
-        <div className="text-xs text-slate-500">
-          Total Registered: <span className="font-bold text-slate-900 font-mono">{customers.length}</span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => refreshAllData()}
+            disabled={isDatabaseSyncing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors border border-blue-200 disabled:opacity-50"
+            title="Refresh from Supabase database"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isDatabaseSyncing ? 'animate-spin' : ''}`} />
+            <span>{isDatabaseSyncing ? 'Syncing...' : 'Sync Supabase'}</span>
+          </button>
+          <div className="text-xs text-slate-500 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+            Total Registered: <span className="font-bold text-slate-900 font-mono">{customers.length}</span>
+          </div>
         </div>
       </div>
 

@@ -14,7 +14,8 @@ import {
   Filter,
   Check,
   Copy,
-  Users
+  Users,
+  RefreshCw
 } from 'lucide-react';
 import { useHotel } from '../../context/HotelContext';
 import { useAuth } from '../../context/AuthContext';
@@ -25,7 +26,7 @@ import { Modal } from '../common/Modal';
 type BookingFilterTab = 'ALL' | 'UPCOMING' | 'CURRENT' | 'COMPLETED' | 'CANCELLED';
 
 export const CustomerMyBookings: React.FC = () => {
-  const { customerBookings, cancelBooking } = useHotel();
+  const { customerBookings, cancelBooking, refreshCustomerBookings, isDatabaseSyncing } = useHotel();
   const { user, customerProfile } = useAuth();
 
   const [activeTab, setActiveTab] = useState<BookingFilterTab>('ALL');
@@ -138,8 +139,19 @@ export const CustomerMyBookings: React.FC = () => {
           </p>
         </div>
 
-        <div className="text-xs text-slate-500 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
-          Total Folios: <span className="font-bold text-slate-900 font-mono">{customerBookings.length}</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => refreshCustomerBookings()}
+            disabled={isDatabaseSyncing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors border border-blue-200 disabled:opacity-50"
+            title="Refresh bookings from Supabase"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isDatabaseSyncing ? 'animate-spin' : ''}`} />
+            <span>{isDatabaseSyncing ? 'Syncing...' : 'Sync'}</span>
+          </button>
+          <div className="text-xs text-slate-500 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+            Total Folios: <span className="font-bold text-slate-900 font-mono">{customerBookings.length}</span>
+          </div>
         </div>
       </div>
 

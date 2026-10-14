@@ -11,6 +11,10 @@ import {
   getStoredRooms,
   getStoredUsers,
   fetchCustomerBookingsFromDatabase,
+  fetchAllBookingsFromDatabase,
+  fetchRoomTypesFromDatabase,
+  fetchRoomsFromDatabase,
+  fetchCustomersFromDatabase,
   createBookingInDatabase,
   cancelBookingInDatabase,
   isSupabaseConfigured
@@ -45,6 +49,7 @@ interface HotelContextType {
   notifications: NotificationItem[];
   customerBookings: Booking[];
   activeCustomerBooking: Booking | null;
+  isDatabaseSyncing: boolean;
   // Mutation methods:
   addManagementUser: (user: { fullName: string; email: string; temporaryPassword?: string }) => void;
   deleteManagementUser: (id: string) => void;
@@ -66,6 +71,7 @@ interface HotelContextType {
     specialRequests?: string;
   }) => Promise<Booking>;
   refreshCustomerBookings: () => Promise<void>;
+  refreshAllData: () => Promise<void>;
   markNotificationAsRead: (id: string) => void;
   dismissNotification: (id: string) => void;
 }
@@ -83,6 +89,37 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [insights] = useState<AiInsight[]>(AI_INSIGHTS);
   const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
   const [customerBookings, setCustomerBookings] = useState<Booking[]>([]);
+  const [isDatabaseSyncing, setIsDatabaseSyncing] = useState<boolean>(false);
+
+  // Synchronize all core data directly from remote Supabase PostgreSQL database
+  const refreshAllData = useCallback(async () => {
+    setIsDatabaseSyncing(true);
+    try {
+      if (isSupabaseConfigured) {
+        // Fetch bookings, room types, rooms, and customers in parallel from Supabase
+        const [dbBookings, dbRoomTypes, dbRooms, dbCustomers] = await Promise.all([
+          fetchAllBookingsFromDatabase(),
+          fetchRoomTypesFromDatabase(),
+          fetchRoomsFromDatabase(),
+          fetchCustomersFromDatabase()
+        ]);
+
+        if (dbBookings && dbBookings.length > 0) {
+          setBookings(dbBookings);
+        }
+        if (dbRoomTypes && dbRoomTypes.length > 0) {
+          setRoomTypes(dbRoomTypes);
+        }
+        if (dbRooms && dbRooms.length > 0) {
+          setRooms(dbRooms);
+        }
+      }
+    } catch (err) {
+      console.warn('Error synchronizing hotel data with Supabase:', err);
+    } finally {
+      setIsDatabaseSyncing(false);
+    }
+  }, []);
 
   // Synchronize customer-specific bookings based on currently authenticated customer
   const refreshCustomerBookings = useCallback(async () => {
@@ -101,14 +138,54 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [user]);
 
+  // Initial load on startup
+  useEffect(() => {
+    refreshAllData();
+  }, [refreshAllData]);
+
   useEffect(() => {
     refreshCustomerBookings();
   }, [refreshCustomerBookings]);
 
+  // Set up Supabase Realtime channel for live bookings & customers updates
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    const channel = supabase
+      .channel('hotel_realtime_changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        (payload) => {
+          console.log('Realtime event received for bookings:', payload);
+          fetchAllBookingsFromDatabase().then(b => {
+            if (b) setBookings(b);
+          });
+          if (user?.id) {
+            fetchCustomerBookingsFromDatabase(user.id).then(cb => {
+              if (cb) setCustomerBookings(cb);
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'customers' },
+        () => {
+          fetchCustomersFromDatabase();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
   // Synchronize customer directory with registered customer profiles and real live booking data
   useEffect(() => {
     const storedCustomers = getStoredCustomers();
-    const storedBookings = getStoredBookings();
+    const storedBookings = bookings.length > 0 ? bookings : getStoredBookings();
 
     const mappedCustomers: Customer[] = storedCustomers.map(sc => {
       const custBookings = storedBookings.filter(
@@ -196,7 +273,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addRoomType = (roomTypeData: Omit<RoomType, 'id'>) => {
     const newRt: RoomType = {
-      id: `rt-${Date.now()}`,
+      id: `11111111-1111-1111-1111-${Date.now().toString().slice(-12)}`,
       ...roomTypeData
     };
     setRoomTypes(prev => [...prev, newRt]);
@@ -212,7 +289,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addRoom = (roomData: Omit<Room, 'id'>) => {
     const newRoom: Room = {
-      id: `rm-${Date.now()}`,
+      id: `22222222-2222-2222-2222-${Date.now().toString().slice(-12)}`,
       ...roomData
     };
     setRooms(prev => [...prev, newRoom]);
@@ -226,6 +303,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCustomerBookings(prev =>
       prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status: 'Cancelled' } : b))
     );
+    refreshAllData();
   };
 
   const updateBookingStatus = (bookingId: string, status: BookingStatus) => {
@@ -235,6 +313,14 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCustomerBookings(prev =>
       prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status } : b))
     );
+    // Also update Supabase
+    if (isSupabaseConfigured) {
+      supabase
+        .from('bookings')
+        .update({ booking_status: status, updated_at: new Date().toISOString() })
+        .or(`id.eq.${bookingId},booking_reference.eq.${bookingId}`)
+        .then(() => refreshAllData());
+    }
   };
 
   const createCustomerBooking = async (data: {
@@ -288,6 +374,10 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     setNotifications(prev => [notif, ...prev]);
 
+    // Refresh all bookings from Supabase so all roles are in immediate lockstep
+    refreshAllData();
+    refreshCustomerBookings();
+
     return newBooking;
   };
 
@@ -311,6 +401,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         notifications,
         customerBookings,
         activeCustomerBooking,
+        isDatabaseSyncing,
         addManagementUser,
         deleteManagementUser,
         updateRoomStatus,
@@ -322,6 +413,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateBookingStatus,
         createCustomerBooking,
         refreshCustomerBookings,
+        refreshAllData,
         markNotificationAsRead,
         dismissNotification
       }}

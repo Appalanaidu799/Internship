@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Filter, Eye, Download } from 'lucide-react';
+import { Search, Filter, Eye, Download, RefreshCw } from 'lucide-react';
 import { useHotel } from '../../context/HotelContext';
 import { Booking } from '../../types/hotel';
 import { StatusBadge } from '../common/StatusBadge';
@@ -7,7 +7,7 @@ import { RiskBadge } from '../common/RiskBadge';
 import { Modal } from '../common/Modal';
 
 export const ManagementBookings: React.FC = () => {
-  const { bookings, updateBookingStatus } = useHotel();
+  const { bookings, updateBookingStatus, refreshAllData, isDatabaseSyncing } = useHotel();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -34,6 +34,17 @@ export const ManagementBookings: React.FC = () => {
           <p className="text-xs text-slate-500 mt-0.5">
             Operational reservation check-in list, daily folio audit, and risk flags.
           </p>
+        </div>
+        <div>
+          <button
+            onClick={() => refreshAllData()}
+            disabled={isDatabaseSyncing}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors border border-blue-200 disabled:opacity-50"
+            title="Refresh bookings from Supabase database"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isDatabaseSyncing ? 'animate-spin' : ''}`} />
+            <span>{isDatabaseSyncing ? 'Syncing...' : 'Sync Supabase'}</span>
+          </button>
         </div>
       </div>
 

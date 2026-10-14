@@ -2,7 +2,7 @@ import { RoomType, Room, Booking, Customer, ManagementUser, AiInsight, Notificat
 
 export const INITIAL_ROOM_TYPES: RoomType[] = [
   {
-    id: 'rt-1',
+    id: '11111111-1111-1111-1111-111111111104',
     name: 'Deluxe Ocean View',
     code: 'DLX-OCN',
     description: 'Expansive private balcony offering panoramic azure ocean views, king bed, and artisan Italian marble bath.',
@@ -16,7 +16,7 @@ export const INITIAL_ROOM_TYPES: RoomType[] = [
     imageTheme: 'ocean'
   },
   {
-    id: 'rt-2',
+    id: '11111111-1111-1111-1111-111111111105',
     name: 'Executive Business Suite',
     code: 'EXE-SUT',
     description: 'Tailored for traveling leaders with separate ergonomic boardroom desk, lounge parlor, and complimentary lounge access.',
@@ -30,8 +30,8 @@ export const INITIAL_ROOM_TYPES: RoomType[] = [
     imageTheme: 'executive'
   },
   {
-    id: 'rt-3',
-    name: 'Luxery Presidential Suite',
+    id: '11111111-1111-1111-1111-111111111107',
+    name: 'Luxery Presidential Penthouse',
     code: 'PRE-SUT',
     description: 'The pinnacle of luxury: penthouse floor, dedicated butler pantry, 8-guest dining salon, and wrap-around terrace jacuzzi.',
     capacity: 4,
@@ -44,7 +44,7 @@ export const INITIAL_ROOM_TYPES: RoomType[] = [
     imageTheme: 'presidential'
   },
   {
-    id: 'rt-4',
+    id: '11111111-1111-1111-1111-111111111106',
     name: 'Premier Garden Villa',
     code: 'PRM-GDN',
     description: 'Tranquil detached sanctuary enclosed by private tropical courtyard, plunge pool, and alfresco rain shower.',
@@ -58,56 +58,59 @@ export const INITIAL_ROOM_TYPES: RoomType[] = [
     imageTheme: 'garden'
   },
   {
-    id: 'rt-5',
-    name: 'Classic Deluxe Twin',
-    code: 'CLS-TWN',
-    description: 'Refined contemporary space featuring two plush twin berths, acoustic soundproofing, and city skyline vantage.',
-    capacity: 2,
-    basePrice: 210,
-    amenities: ['Twin Berth Linens', 'Soundproof Glazing', 'Workstation', 'City Skyline View', 'Rain Shower', 'Turndown Service'],
+    id: '11111111-1111-1111-1111-111111111101',
+    name: 'Single Sharing Room',
+    code: 'SNG-SHR',
+    description: 'Cozy private room with single bed, ergonomic workspace, and high-speed Wi-Fi.',
+    capacity: 1,
+    basePrice: 120,
+    amenities: ['High-Speed WiFi', 'Workstation Desk', 'Ensuite Shower', 'Air Conditioning'],
     status: 'Active',
-    totalInventory: 24,
-    sizeSqFt: 420,
-    bedType: '2 Double Beds',
+    totalInventory: 10,
+    sizeSqFt: 220,
+    bedType: '1 Single Bed',
     imageTheme: 'classic'
   },
   {
-    id: 'rt-6',
-    name: 'Grand Family Suite',
-    code: 'FAM-SUT',
-    description: 'Generous multi-room suite with connected master and junior bedrooms, living kitchen, and family entertainment hub.',
-    capacity: 5,
-    basePrice: 520,
-    amenities: ['Dual Bedrooms', 'Full Kitchenette', 'Gaming Console', 'Kids Amenities Pack', 'Walk-in Wardrobe', 'Family Balcony'],
+    id: '11111111-1111-1111-1111-111111111102',
+    name: 'Double Sharing Room',
+    code: 'DBL-SHR',
+    description: 'Spacious twin or queen arrangement ideal for couples or traveling partners.',
+    capacity: 2,
+    basePrice: 180,
+    amenities: ['High-Speed WiFi', 'Queen Bed / Twin', 'Smart HDTV', 'Coffee Maker', 'Balcony'],
     status: 'Active',
-    totalInventory: 6,
-    sizeSqFt: 960,
-    bedType: '1 King + 2 Singles + 1 Crib',
+    totalInventory: 15,
+    sizeSqFt: 340,
+    bedType: 'Queen Bed or 2 Twins',
+    imageTheme: 'ocean'
+  },
+  {
+    id: '11111111-1111-1111-1111-111111111103',
+    name: 'Triple Sharing Room',
+    code: 'TRP-SHR',
+    description: 'Generously apportioned suite featuring three single beds or king + single with lounge.',
+    capacity: 3,
+    basePrice: 240,
+    amenities: ['High-Speed WiFi', '3 Individual Beds', 'Mini Bar', 'Walk-in Wardrobe', 'Seaside Balcony'],
+    status: 'Active',
+    totalInventory: 8,
+    sizeSqFt: 460,
+    bedType: '3 Single Beds',
     imageTheme: 'family'
   }
 ];
 
 export const INITIAL_ROOMS: Room[] = [
-  { id: 'rm-101', roomNumber: '101', roomTypeId: 'rt-5', roomTypeName: 'Classic Deluxe Twin', floor: 1, price: 210, status: 'Available', lastCleaned: 'Today 10:30 AM' },
-  { id: 'rm-102', roomNumber: '102', roomTypeId: 'rt-5', roomTypeName: 'Classic Deluxe Twin', floor: 1, price: 210, status: 'Occupied', currentGuest: 'Marcus Vance', lastCleaned: 'Yesterday' },
-  { id: 'rm-103', roomNumber: '103', roomTypeId: 'rt-5', roomTypeName: 'Classic Deluxe Twin', floor: 1, price: 210, status: 'Maintenance', lastCleaned: 'Oct 04' },
-  { id: 'rm-104', roomNumber: '104', roomTypeId: 'rt-5', roomTypeName: 'Classic Deluxe Twin', floor: 1, price: 210, status: 'Available', lastCleaned: 'Today 09:15 AM' },
-  { id: 'rm-201', roomNumber: '201', roomTypeId: 'rt-1', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Occupied', currentGuest: 'Raj Kumar', lastCleaned: 'Today 08:45 AM' },
-  { id: 'rm-202', roomNumber: '202', roomTypeId: 'rt-1', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Available', lastCleaned: 'Today 11:20 AM' },
-  { id: 'rm-203', roomNumber: '203', roomTypeId: 'rt-1', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Occupied', currentGuest: 'Priya Sharma', lastCleaned: 'Today 07:30 AM' },
-  { id: 'rm-204', roomNumber: '204', roomTypeId: 'rt-1', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Available', lastCleaned: 'Today 12:00 PM' },
-  { id: 'rm-205', roomNumber: '205', roomTypeId: 'rt-1', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Maintenance', lastCleaned: 'Oct 05' },
-  { id: 'rm-301', roomNumber: '301', roomTypeId: 'rt-2', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Occupied', currentGuest: 'David Miller', lastCleaned: 'Today 09:00 AM' },
-  { id: 'rm-302', roomNumber: '302', roomTypeId: 'rt-2', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Available', lastCleaned: 'Today 10:15 AM' },
-  { id: 'rm-303', roomNumber: '303', roomTypeId: 'rt-2', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Occupied', currentGuest: 'Ananya Patel', lastCleaned: 'Today 08:15 AM' },
-  { id: 'rm-304', roomNumber: '304', roomTypeId: 'rt-2', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Available', lastCleaned: 'Today 11:45 AM' },
-  { id: 'rm-401', roomNumber: '401', roomTypeId: 'rt-4', roomTypeName: 'Premier Garden Villa', floor: 4, price: 460, status: 'Available', lastCleaned: 'Today 09:45 AM' },
-  { id: 'rm-402', roomNumber: '402', roomTypeId: 'rt-4', roomTypeName: 'Premier Garden Villa', floor: 4, price: 460, status: 'Occupied', currentGuest: 'Sophia Chen', lastCleaned: 'Today 08:30 AM' },
-  { id: 'rm-403', roomNumber: '403', roomTypeId: 'rt-4', roomTypeName: 'Premier Garden Villa', floor: 4, price: 460, status: 'Available', lastCleaned: 'Today 12:30 PM' },
-  { id: 'rm-501', roomNumber: '501', roomTypeId: 'rt-6', roomTypeName: 'Grand Family Suite', floor: 5, price: 520, status: 'Occupied', currentGuest: 'Elena Rostova', lastCleaned: 'Today 10:00 AM' },
-  { id: 'rm-502', roomNumber: '502', roomTypeId: 'rt-6', roomTypeName: 'Grand Family Suite', floor: 5, price: 520, status: 'Available', lastCleaned: 'Today 11:10 AM' },
-  { id: 'rm-601', roomNumber: '601', roomTypeId: 'rt-3', roomTypeName: 'Luxery Presidential Suite', floor: 6, price: 850, status: 'Occupied', currentGuest: 'Karthik Varma', lastCleaned: 'Today 07:00 AM' },
-  { id: 'rm-602', roomNumber: '602', roomTypeId: 'rt-3', roomTypeName: 'Luxery Presidential Suite', floor: 6, price: 850, status: 'Available', lastCleaned: 'Today 01:15 PM' }
+  { id: '22222222-2222-2222-2222-222222222101', roomNumber: 'Room 101', roomTypeId: '11111111-1111-1111-1111-111111111101', roomTypeName: 'Single Sharing Room', floor: 1, price: 120, status: 'Available', lastCleaned: 'Today 10:30 AM' },
+  { id: '22222222-2222-2222-2222-222222222102', roomNumber: 'Room 102', roomTypeId: '11111111-1111-1111-1111-111111111102', roomTypeName: 'Double Sharing Room', floor: 1, price: 180, status: 'Available', lastCleaned: 'Today 09:15 AM' },
+  { id: '22222222-2222-2222-2222-222222222103', roomNumber: 'Room 103', roomTypeId: '11111111-1111-1111-1111-111111111103', roomTypeName: 'Triple Sharing Room', floor: 1, price: 240, status: 'Available', lastCleaned: 'Oct 04' },
+  { id: '22222222-2222-2222-2222-222222222201', roomNumber: 'Room 201', roomTypeId: '11111111-1111-1111-1111-111111111104', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Available', lastCleaned: 'Today 08:45 AM' },
+  { id: '22222222-2222-2222-2222-222222222202', roomNumber: 'Room 202', roomTypeId: '11111111-1111-1111-1111-111111111104', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Occupied', currentGuest: 'Rajesh Naidu', lastCleaned: 'Today 11:20 AM' },
+  { id: '22222222-2222-2222-2222-222222222301', roomNumber: 'Room 301', roomTypeId: '11111111-1111-1111-1111-111111111105', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Available', lastCleaned: 'Today 09:00 AM' },
+  { id: '22222222-2222-2222-2222-222222222302', roomNumber: 'Room 302', roomTypeId: '11111111-1111-1111-1111-111111111105', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Maintenance', lastCleaned: 'Oct 05' },
+  { id: '22222222-2222-2222-2222-222222222401', roomNumber: 'Villa 401', roomTypeId: '11111111-1111-1111-1111-111111111106', roomTypeName: 'Premier Garden Villa', floor: 4, price: 460, status: 'Available', lastCleaned: 'Today 09:45 AM' },
+  { id: '22222222-2222-2222-2222-222222222501', roomNumber: 'Penthouse 501', roomTypeId: '11111111-1111-1111-1111-111111111107', roomTypeName: 'Luxery Presidential Penthouse', floor: 5, price: 850, status: 'Available', lastCleaned: 'Today 07:00 AM' }
 ];
 
 export const INITIAL_BOOKINGS: Booking[] = [

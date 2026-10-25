@@ -153,9 +153,27 @@ export const ManagementBookings: React.FC = () => {
           <div className="space-y-3 text-xs">
             <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
               <p className="font-bold text-slate-900 text-sm">{selectedBooking.roomTypeName}</p>
-              <p className="text-slate-600 font-mono mt-0.5">{selectedBooking.checkIn} → {selectedBooking.checkOut}</p>
+              <p className="text-slate-600 font-mono mt-0.5">{selectedBooking.checkIn} → {selectedBooking.checkOut} ({selectedBooking.nights} nights, {selectedBooking.guests} guests)</p>
               <p className="text-slate-600">Rate: ${selectedBooking.adr} / night · Total: ${selectedBooking.totalAmount}</p>
             </div>
+
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase">Guest KYC & Verification</span>
+              <p className="font-bold text-slate-900">{selectedBooking.customerName}</p>
+              <p className="font-mono text-slate-600">{selectedBooking.customerPhone || 'Phone not recorded'} · {selectedBooking.customerEmail}</p>
+              <p className="text-slate-600">Age: {selectedBooking.customerAge || '18+'} · Gender: {selectedBooking.customerGender || 'Verified'}</p>
+              {(selectedBooking.aadharNumber || selectedBooking.idProofNumber) && (
+                <p className="font-mono text-[11px] text-slate-800 bg-slate-50 p-1 rounded border border-slate-200">
+                  <span className="font-bold">{selectedBooking.idProofType || 'Aadhar'}:</span> {selectedBooking.aadharNumber || selectedBooking.idProofNumber}
+                </p>
+              )}
+              {selectedBooking.customerAddress && (
+                <p className="text-slate-500 text-[11px]">
+                  Address: {selectedBooking.customerAddress}, {selectedBooking.customerCity}
+                </p>
+              )}
+            </div>
+
             {selectedBooking.specialRequests && (
               <div className="p-2.5 bg-blue-50 rounded-lg text-blue-900 border border-blue-200">
                 <span className="font-bold block mb-0.5">Special Requests:</span>

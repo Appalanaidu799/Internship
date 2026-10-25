@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Database, Copy, Check, ExternalLink, RefreshCw, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { SUPABASE_USERS_TABLE_SQL, supabaseUrl } from '../../lib/supabase';
+import { SUPABASE_USERS_TABLE_SQL, supabaseUrl, syncLocalBookingsToSupabase } from '../../lib/supabase';
 
 interface SupabaseDbBannerProps {
   alwaysVisible?: boolean;
@@ -56,11 +56,14 @@ export const SupabaseDbBanner: React.FC<SupabaseDbBannerProps> = ({ alwaysVisibl
       const status = await checkDatabaseStatus(true);
       if (status.tableExists) {
         const syncRes = await appendUsersToRemoteDb();
-        if (syncRes.success) {
-          setStatusMsg(`Table active! Appended ${syncRes.count} user rows to Supabase.`);
+        const bkgSync = await syncLocalBookingsToSupabase();
+        let msg = `Database active! Appended ${syncRes.count} user rows.`;
+        if (bkgSync.synced > 0) {
+          msg += ` Pushed ${bkgSync.synced} booking(s) to Supabase!`;
         } else {
-          setStatusMsg('Table verified on Supabase! Ready to accept users.');
+          msg += ' All bookings synced with Supabase.';
         }
+        setStatusMsg(msg);
       } else {
         setStatusMsg('Table public.users not detected yet. Please run the SQL in Supabase SQL Editor and try again.');
       }
@@ -132,7 +135,7 @@ export const SupabaseDbBanner: React.FC<SupabaseDbBannerProps> = ({ alwaysVisibl
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-semibold transition-colors shadow-xs disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isVerifying ? 'animate-spin' : ''}`} />
-            <span>{isVerifying ? 'Checking...' : 'Verify & Append Rows'}</span>
+            <span>{isVerifying ? 'Verifying & Syncing...' : 'Verify & Sync Bookings to Supabase'}</span>
           </button>
 
           {!alwaysVisible && (

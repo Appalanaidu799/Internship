@@ -17,6 +17,7 @@ import {
   fetchCustomersFromDatabase,
   createBookingInDatabase,
   cancelBookingInDatabase,
+  syncLocalBookingsToSupabase,
   isSupabaseConfigured
 } from '../lib/supabase';
 import { useAuth } from './AuthContext';
@@ -69,9 +70,26 @@ interface HotelContextType {
     nights: number;
     adr: number;
     specialRequests?: string;
+    customerName?: string;
+    customerEmail?: string;
+    customerPhone?: string;
+    customerAge?: number;
+    customerGender?: string;
+    customerAddress?: string;
+    customerCity?: string;
+    customerState?: string;
+    customerCountry?: string;
+    customerPostalCode?: string;
+    aadharNumber?: string;
+    idProofType?: string;
+    idProofNumber?: string;
+    purposeOfVisit?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
   }) => Promise<Booking>;
   refreshCustomerBookings: () => Promise<void>;
   refreshAllData: () => Promise<void>;
+  syncBookingsToRemote: () => Promise<{ synced: number; total: number }>;
   markNotificationAsRead: (id: string) => void;
   dismissNotification: (id: string) => void;
 }
@@ -96,6 +114,9 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsDatabaseSyncing(true);
     try {
       if (isSupabaseConfigured) {
+        // Automatically sync any offline or unsynced bookings (e.g. prior failed requests) to Supabase
+        await syncLocalBookingsToSupabase();
+
         // Fetch bookings, room types, rooms, and customers in parallel from Supabase
         const [dbBookings, dbRoomTypes, dbRooms, dbCustomers] = await Promise.all([
           fetchAllBookingsFromDatabase(),
@@ -332,12 +353,28 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     nights: number;
     adr: number;
     specialRequests?: string;
+    customerName?: string;
+    customerEmail?: string;
+    customerPhone?: string;
+    customerAge?: number;
+    customerGender?: string;
+    customerAddress?: string;
+    customerCity?: string;
+    customerState?: string;
+    customerCountry?: string;
+    customerPostalCode?: string;
+    aadharNumber?: string;
+    idProofType?: string;
+    idProofNumber?: string;
+    purposeOfVisit?: string;
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
   }): Promise<Booking> => {
     const customerId = user?.id || 'c0000000-0000-0000-0000-000000000003';
     const customerCode = customerProfile?.customer_code || 'CUS-NAIDU001';
-    const customerName = user?.fullName || 'Guest Customer';
-    const customerEmail = user?.email || 'customer@gmail.com';
-    const customerPhone = user?.phone || '';
+    const customerName = data.customerName?.trim() || customerProfile?.full_name || user?.fullName || 'Guest Customer';
+    const customerEmail = data.customerEmail?.trim() || customerProfile?.email || user?.email || 'customer@gmail.com';
+    const customerPhone = data.customerPhone?.trim() || customerProfile?.phone || user?.phone || '';
 
     const res = await createBookingInDatabase({
       customerId,
@@ -345,6 +382,19 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       customerName,
       customerEmail,
       customerPhone,
+      customerAge: data.customerAge ?? (customerProfile?.age || undefined),
+      customerGender: data.customerGender || customerProfile?.gender || undefined,
+      customerAddress: data.customerAddress || customerProfile?.address_line || undefined,
+      customerCity: data.customerCity || customerProfile?.city || undefined,
+      customerState: data.customerState || customerProfile?.state || undefined,
+      customerCountry: data.customerCountry || customerProfile?.country || 'India',
+      customerPostalCode: data.customerPostalCode || customerProfile?.postal_code || undefined,
+      aadharNumber: data.aadharNumber || customerProfile?.aadhar_number || data.idProofNumber || undefined,
+      idProofType: data.idProofType || customerProfile?.id_proof_type || 'Aadhar Card',
+      idProofNumber: data.idProofNumber || customerProfile?.id_proof_number || data.aadharNumber || undefined,
+      purposeOfVisit: data.purposeOfVisit || 'Leisure / Holiday',
+      emergencyContactName: data.emergencyContactName || customerProfile?.emergency_contact_name || undefined,
+      emergencyContactPhone: data.emergencyContactPhone || customerProfile?.emergency_contact_phone || undefined,
       roomTypeId: data.roomTypeId,
       roomTypeName: data.roomTypeName,
       checkIn: data.checkIn,
@@ -414,6 +464,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         createCustomerBooking,
         refreshCustomerBookings,
         refreshAllData,
+        syncBookingsToRemote: syncLocalBookingsToSupabase,
         markNotificationAsRead,
         dismissNotification
       }}

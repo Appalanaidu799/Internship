@@ -204,12 +204,26 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
             </div>
           </div>
 
-          {activeCustomerBooking.specialRequests && (
-            <div className="pt-3 border-t border-blue-100/80 text-xs text-blue-900">
-              <span className="font-semibold">Special Requests on file: </span>
-              <span>{activeCustomerBooking.specialRequests}</span>
+          <div className="pt-3 border-t border-blue-100/80 flex flex-wrap items-center justify-between gap-2 text-xs text-blue-900">
+            <div>
+              <span className="font-semibold text-slate-700">Primary Guest: </span>
+              <span className="font-bold text-slate-900">{activeCustomerBooking.customerName}</span>
+              {activeCustomerBooking.customerPhone && (
+                <span className="font-mono text-slate-600 ml-2">({activeCustomerBooking.customerPhone})</span>
+              )}
+              {(activeCustomerBooking.aadharNumber || activeCustomerBooking.idProofNumber) && (
+                <span className="ml-2 font-mono text-[11px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-semibold">
+                  {activeCustomerBooking.idProofType || 'Aadhar'}: {activeCustomerBooking.aadharNumber || activeCustomerBooking.idProofNumber}
+                </span>
+              )}
             </div>
-          )}
+            {activeCustomerBooking.specialRequests && (
+              <div className="text-slate-500 italic">
+                <span>Notes: </span>
+                <span>{activeCustomerBooking.specialRequests}</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

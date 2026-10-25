@@ -315,11 +315,24 @@ export const AdminBookings: React.FC = () => {
             {/* Guest & Room Breakdown */}
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase">Guest Information</span>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase">Guest KYC & Verification</span>
                 <p className="font-bold text-slate-900 text-sm">{selectedBooking.customerName}</p>
                 <p className="font-mono text-slate-600">{selectedBooking.customerEmail}</p>
                 <p className="font-mono text-slate-600">{selectedBooking.customerPhone || 'N/A'}</p>
-                <p className="text-slate-500 pt-1">Market Segment: <span className="font-semibold text-slate-700">{selectedBooking.marketSegment}</span></p>
+                <p className="text-slate-600">
+                  Age: <span className="font-semibold">{selectedBooking.customerAge || '18+'}</span> · Gender: <span className="font-semibold">{selectedBooking.customerGender || 'N/A'}</span>
+                </p>
+                {(selectedBooking.aadharNumber || selectedBooking.idProofNumber) && (
+                  <p className="text-slate-700 font-mono text-[11px] bg-slate-50 p-1 rounded border border-slate-200">
+                    <span className="font-bold">{selectedBooking.idProofType || 'Aadhar'}:</span> {selectedBooking.aadharNumber || selectedBooking.idProofNumber}
+                  </p>
+                )}
+                {selectedBooking.customerAddress && (
+                  <p className="text-[11px] text-slate-500 truncate" title={`${selectedBooking.customerAddress}, ${selectedBooking.customerCity || ''}`}>
+                    Address: {selectedBooking.customerAddress}, {selectedBooking.customerCity}
+                  </p>
+                )}
+                <p className="text-slate-500 pt-1">Purpose: <span className="font-semibold text-slate-700">{selectedBooking.purposeOfVisit || 'Leisure'}</span></p>
               </div>
 
               <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">

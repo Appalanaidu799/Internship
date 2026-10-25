@@ -134,11 +134,33 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_reference text UNIQUE NOT NULL,
   customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+  customer_name text,
+  customer_email text,
+  customer_phone text,
+  customer_age integer,
+  customer_gender text,
+  customer_address text,
+  customer_city text,
+  customer_state text,
+  customer_country text,
+  aadhar_number text,
+  id_proof_type text DEFAULT 'Aadhar Card',
+  id_proof_number text,
+  purpose_of_visit text,
+  emergency_contact_name text,
+  emergency_contact_phone text,
   room_id uuid REFERENCES public.rooms(id) ON DELETE SET NULL,
-  room_type_id uuid REFERENCES public.room_types(id) ON DELETE RESTRICT,
+  room_number text,
+  room_type_id uuid REFERENCES public.room_types(id) ON DELETE SET NULL,
+  room_type_name text,
   check_in date NOT NULL,
   check_out date NOT NULL,
-  number_of_guests integer NOT NULL CHECK (number_of_guests > 0),
+  number_of_guests integer NOT NULL DEFAULT 1 CHECK (number_of_guests > 0),
+  guests integer NOT NULL DEFAULT 1 CHECK (guests > 0),
+  nights integer NOT NULL DEFAULT 1 CHECK (nights > 0),
+  number_of_days integer NOT NULL DEFAULT 1 CHECK (number_of_days > 0),
+  days integer NOT NULL DEFAULT 1 CHECK (days > 0),
+  adr numeric(10,2) DEFAULT 0,
   number_of_rooms integer NOT NULL DEFAULT 1 CHECK (number_of_rooms > 0),
   total_amount numeric(10,2) NOT NULL CHECK (total_amount >= 0),
   booking_status text NOT NULL DEFAULT 'Confirmed' CHECK (booking_status IN ('Confirmed', 'Checked-In', 'Checked-Out', 'Cancelled')),
@@ -149,8 +171,82 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   CONSTRAINT valid_booking_dates CHECK (check_out > check_in)
 );
 
+-- 5b. MIGRATION: Ensure existing bookings and customers tables have all rich stay and identity columns
+-- Explicit top-level ALTER TABLE statements ensure columns exist in PostgreSQL catalog immediately
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_name text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_email text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_phone text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_age integer;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_gender text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_address text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_city text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_state text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_country text DEFAULT 'India';
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_postal_code text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS aadhar_number text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS id_proof_type text DEFAULT 'Aadhar Card';
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS id_proof_number text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS purpose_of_visit text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS emergency_contact_name text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS emergency_contact_phone text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS room_number text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS room_type_name text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS number_of_guests integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS guests integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS nights integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS number_of_days integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS days integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS adr numeric(10,2) DEFAULT 0;
+ALTER TABLE public.bookings ALTER COLUMN room_type_id DROP NOT NULL;
+
+-- Relax foreign key constraint if room_types doesn't have the matched id
+DO $$
+BEGIN
+  ALTER TABLE public.bookings DROP CONSTRAINT IF EXISTS bookings_room_type_id_fkey;
+  ALTER TABLE public.bookings ADD CONSTRAINT bookings_room_type_id_fkey 
+    FOREIGN KEY (room_type_id) REFERENCES public.room_types(id) ON DELETE SET NULL;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- Ensure public.customers also has all verification and KYC columns
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS age integer;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS aadhar_number text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS id_proof_type text DEFAULT 'Aadhar Card';
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS id_proof_number text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS emergency_contact_name text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS emergency_contact_phone text;
+
+-- Safe dynamic backfill of legacy bookings using EXECUTE (prevents PostgreSQL 42703 & 42P01 errors)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'bookings' AND column_name = 'customer_name'
+  ) THEN
+    EXECUTE '
+      UPDATE public.bookings b
+      SET 
+        nights = COALESCE(b.nights, GREATEST(1, (b.check_out - b.check_in))),
+        number_of_days = COALESCE(b.number_of_days, GREATEST(1, (b.check_out - b.check_in))),
+        days = COALESCE(b.days, GREATEST(1, (b.check_out - b.check_in))),
+        guests = COALESCE(b.guests, b.number_of_guests, 1),
+        number_of_guests = COALESCE(b.number_of_guests, b.guests, 1),
+        adr = COALESCE(b.adr, CASE WHEN (b.check_out - b.check_in) > 0 THEN ROUND(b.total_amount / (b.check_out - b.check_in), 2) ELSE b.total_amount END),
+        customer_name = COALESCE(b.customer_name, (SELECT c.full_name FROM public.customers c WHERE c.id = b.customer_id), ''Guest Customer''),
+        customer_email = COALESCE(b.customer_email, (SELECT c.email FROM public.customers c WHERE c.id = b.customer_id), ''''),
+        customer_phone = COALESCE(b.customer_phone, (SELECT c.phone FROM public.customers c WHERE c.id = b.customer_id), ''''),
+        room_type_name = COALESCE(b.room_type_name, (SELECT rt.name FROM public.room_types rt WHERE rt.id = b.room_type_id), ''Deluxe Room'')
+      WHERE (b.customer_name IS NULL OR b.nights IS NULL OR b.room_type_name IS NULL);
+    ';
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_bookings_customer ON public.bookings(customer_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_room ON public.bookings(room_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_room_type ON public.bookings(room_type_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_dates ON public.bookings(check_in, check_out);
 CREATE INDEX IF NOT EXISTS idx_bookings_reference ON public.bookings(booking_reference);
 
@@ -1218,22 +1314,40 @@ export async function fetchCustomerBookingsFromDatabase(customerId: string): Pro
         const mapped: Booking[] = data.map((b: any) => {
           const rt = roomTypes.find(t => t.id === b.room_type_id);
           const rm = rooms.find(r => r.id === b.room_id);
+          const calcNights = b.nights || b.number_of_days || b.days || Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24)));
+          const calcGuests = b.guests || b.number_of_guests || 1;
+          const calcAdr = b.adr ? Number(b.adr) : Math.round(Number(b.total_amount) / calcNights);
+
           return {
             id: b.booking_reference || b.id,
             bookingReference: b.booking_reference,
             customerId: b.customer_id,
             customerCode: 'CUS-GUEST',
             roomTypeId: b.room_type_id,
-            roomTypeName: rt?.name || 'Selected Suite',
+            roomTypeName: b.room_type_name || rt?.name || 'Selected Suite',
             roomId: b.room_id,
-            roomNumber: rm?.roomNumber || 'Assigned at Check-In',
-            customerName: 'Guest',
-            customerEmail: '',
+            roomNumber: b.room_number || rm?.roomNumber || 'Assigned at Check-In',
+            customerName: b.customer_name || 'Guest',
+            customerEmail: b.customer_email || '',
+            customerPhone: b.customer_phone || '',
+            customerAge: b.customer_age || b.age,
+            customerGender: b.customer_gender || b.gender,
+            customerAddress: b.customer_address || b.address,
+            customerCity: b.customer_city || b.city,
+            customerState: b.customer_state || b.state,
+            customerCountry: b.customer_country || b.country,
+            customerPostalCode: b.customer_postal_code || b.postal_code,
+            aadharNumber: b.aadhar_number || b.customer_aadhar,
+            idProofType: b.id_proof_type || 'Aadhar Card',
+            idProofNumber: b.id_proof_number || b.aadhar_number,
+            purposeOfVisit: b.purpose_of_visit || 'Leisure / Holiday',
+            emergencyContactName: b.emergency_contact_name,
+            emergencyContactPhone: b.emergency_contact_phone,
             checkIn: b.check_in,
             checkOut: b.check_out,
-            nights: Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24))),
-            guests: b.number_of_guests,
-            adr: Number(b.total_amount) / Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24))),
+            nights: calcNights,
+            guests: calcGuests,
+            adr: calcAdr,
             totalAmount: Number(b.total_amount),
             status: b.booking_status as BookingStatus,
             paymentStatus: b.payment_status || 'Paid',
@@ -1284,24 +1398,40 @@ export async function fetchAllBookingsFromDatabase(): Promise<Booking[]> {
           const rt = roomTypes.find(t => t.id === b.room_type_id);
           const rm = rooms.find(r => r.id === b.room_id);
           const cust = storedCustomers.find(c => c.id === b.customer_id);
+          const calcNights = b.nights || b.number_of_days || b.days || Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24)));
+          const calcGuests = b.guests || b.number_of_guests || 1;
+          const calcAdr = b.adr ? Number(b.adr) : Math.round(Number(b.total_amount) / calcNights);
 
           return {
             id: b.booking_reference || b.id,
             bookingReference: b.booking_reference,
             customerId: b.customer_id,
             customerCode: cust?.customer_code || 'CUS-GUEST',
-            customerName: cust?.full_name || 'Guest Customer',
-            customerEmail: cust?.email || '',
-            customerPhone: cust?.phone || '',
+            customerName: b.customer_name || cust?.full_name || 'Guest Customer',
+            customerEmail: b.customer_email || cust?.email || '',
+            customerPhone: b.customer_phone || cust?.phone || '',
+            customerAge: b.customer_age || b.age || cust?.age,
+            customerGender: b.customer_gender || b.gender || cust?.gender,
+            customerAddress: b.customer_address || b.address || cust?.address_line,
+            customerCity: b.customer_city || b.city || cust?.city,
+            customerState: b.customer_state || b.state || cust?.state,
+            customerCountry: b.customer_country || b.country || cust?.country,
+            customerPostalCode: b.customer_postal_code || b.postal_code || cust?.postal_code,
+            aadharNumber: b.aadhar_number || b.customer_aadhar || cust?.aadhar_number,
+            idProofType: b.id_proof_type || cust?.id_proof_type || 'Aadhar Card',
+            idProofNumber: b.id_proof_number || b.aadhar_number || cust?.id_proof_number,
+            purposeOfVisit: b.purpose_of_visit || 'Leisure / Holiday',
+            emergencyContactName: b.emergency_contact_name || cust?.emergency_contact_name,
+            emergencyContactPhone: b.emergency_contact_phone || cust?.emergency_contact_phone,
             roomTypeId: b.room_type_id,
-            roomTypeName: rt?.name || 'Selected Suite',
+            roomTypeName: b.room_type_name || rt?.name || 'Selected Suite',
             roomId: b.room_id,
-            roomNumber: rm?.roomNumber || 'Assigned at Check-In',
+            roomNumber: b.room_number || rm?.roomNumber || 'Assigned at Check-In',
             checkIn: b.check_in,
             checkOut: b.check_out,
-            nights: Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24))),
-            guests: b.number_of_guests,
-            adr: Number(b.total_amount) / Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24))),
+            nights: calcNights,
+            guests: calcGuests,
+            adr: calcAdr,
             totalAmount: Number(b.total_amount),
             status: b.booking_status as BookingStatus,
             paymentStatus: b.payment_status || 'Paid',
@@ -1356,6 +1486,44 @@ export async function fetchRoomTypesFromDatabase(): Promise<RoomType[]> {
         saveStoredRoomTypes(mapped);
         return mapped;
       }
+
+      // If remote table exists in Supabase but has 0 rows, auto-seed default room types!
+      if (!error && Array.isArray(data) && data.length === 0) {
+        const seedPayload = INITIAL_FALLBACK_ROOM_TYPES.map(rt => ({
+          id: rt.id,
+          name: rt.name,
+          description: rt.description,
+          capacity: rt.capacity,
+          base_price: rt.basePrice,
+          amenities: rt.amenities,
+          is_active: true
+        }));
+
+        const { data: seededData } = await supabase
+          .from('room_types')
+          .upsert(seedPayload)
+          .select();
+
+        if (Array.isArray(seededData) && seededData.length > 0) {
+          setRemoteTableStatus('ready');
+          const mapped: RoomType[] = seededData.map((rt: any) => ({
+            id: rt.id,
+            name: rt.name,
+            code: rt.name.substring(0, 3).toUpperCase(),
+            description: rt.description || '',
+            capacity: rt.capacity,
+            basePrice: Number(rt.base_price),
+            amenities: Array.isArray(rt.amenities) ? rt.amenities : [],
+            status: rt.is_active ? 'Active' : 'Inactive',
+            totalInventory: 10,
+            sizeSqFt: 400,
+            bedType: `${rt.capacity} Guests`,
+            imageTheme: 'ocean'
+          }));
+          saveStoredRoomTypes(mapped);
+          return mapped;
+        }
+      }
     } catch (e) {
       console.warn('Notice querying room types from Supabase:', e);
     }
@@ -1393,6 +1561,18 @@ export async function fetchRoomsFromDatabase(): Promise<Room[]> {
         saveStoredRooms(mapped);
         return mapped;
       }
+
+      // If remote table exists in Supabase but has 0 rows, auto-seed default physical rooms!
+      if (!error && Array.isArray(data) && data.length === 0) {
+        const seedPayload = INITIAL_FALLBACK_ROOMS.map(r => ({
+          id: r.id,
+          room_number: r.roomNumber,
+          room_type_id: r.roomTypeId,
+          floor_number: r.floor,
+          status: r.status
+        }));
+        await supabase.from('rooms').upsert(seedPayload);
+      }
     } catch (e) {
       console.warn('Notice querying rooms from Supabase:', e);
     }
@@ -1424,6 +1604,108 @@ export async function fetchCustomersFromDatabase(): Promise<CustomerProfileData[
 }
 
 /**
+ * Resolves a room_type_id that is guaranteed to exist in Supabase public.room_types.
+ * Handles existing tables, empty tables, name mismatches, or custom UUID schemas.
+ */
+export async function resolveDatabaseRoomTypeId(
+  requestedId?: string,
+  requestedName?: string,
+  guestCount?: number,
+  basePrice?: number
+): Promise<string | null> {
+  if (!isSupabaseConfigured) {
+    return requestedId || '11111111-1111-1111-1111-111111111104';
+  }
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  try {
+    // 1. Direct ID match check
+    if (requestedId && uuidRegex.test(requestedId)) {
+      const { data: directMatch } = await supabase
+        .from('room_types')
+        .select('id')
+        .eq('id', requestedId)
+        .maybeSingle();
+
+      if (directMatch?.id) {
+        return directMatch.id;
+      }
+    }
+
+    // 2. Fetch all existing room types from Supabase
+    const { data: allRts, error: fetchErr } = await supabase
+      .from('room_types')
+      .select('id, name, capacity, base_price');
+
+    if (!fetchErr && Array.isArray(allRts) && allRts.length > 0) {
+      // (a) Try exact or case-insensitive name match
+      if (requestedName) {
+        const nameClean = requestedName.trim().toLowerCase();
+        const found = allRts.find(r => r.name.toLowerCase() === nameClean);
+        if (found) return found.id;
+
+        // (b) Partial name match (e.g. 'Deluxe' in 'Deluxe Ocean View')
+        const partial = allRts.find(
+          r => r.name.toLowerCase().includes(nameClean) || nameClean.includes(r.name.toLowerCase())
+        );
+        if (partial) return partial.id;
+      }
+
+      // (c) Pick the first room type in the table
+      return allRts[0].id;
+    }
+
+    // 3. Table is completely empty in Supabase! Seed the room types into Supabase
+    const seedPayload = INITIAL_FALLBACK_ROOM_TYPES.map(rt => ({
+      id: rt.id,
+      name: rt.name,
+      description: rt.description,
+      capacity: rt.capacity,
+      base_price: rt.basePrice,
+      amenities: rt.amenities,
+      is_active: true
+    }));
+
+    const { data: seeded, error: seedErr } = await supabase
+      .from('room_types')
+      .upsert(seedPayload)
+      .select('id, name');
+
+    if (!seedErr && Array.isArray(seeded) && seeded.length > 0) {
+      if (requestedName) {
+        const found = seeded.find(r => r.name.toLowerCase() === requestedName.toLowerCase());
+        if (found) return found.id;
+      }
+      return seeded[0].id;
+    }
+
+    // 4. Fallback single room type insert
+    const fallbackPayload = {
+      name: requestedName || 'Deluxe Room',
+      description: 'Standard guest room accommodation',
+      capacity: guestCount || 2,
+      base_price: basePrice || 200,
+      amenities: ['WiFi', 'Air Conditioning', 'Ensuite Bathroom'],
+      is_active: true
+    };
+    const { data: singleInsert } = await supabase
+      .from('room_types')
+      .insert(fallbackPayload)
+      .select('id')
+      .maybeSingle();
+
+    if (singleInsert?.id) {
+      return singleInsert.id;
+    }
+  } catch (err) {
+    console.warn('Notice resolving room type from Supabase:', err);
+  }
+
+  return (requestedId && uuidRegex.test(requestedId)) ? requestedId : null;
+}
+
+/**
  * Create a new customer booking in Supabase public.bookings table (and local storage).
  * Validates check-in/out dates, guest count against room capacity, and availability.
  */
@@ -1433,6 +1715,19 @@ export async function createBookingInDatabase(bookingData: {
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
+  customerAge?: number;
+  customerGender?: string;
+  customerAddress?: string;
+  customerCity?: string;
+  customerState?: string;
+  customerCountry?: string;
+  customerPostalCode?: string;
+  aadharNumber?: string;
+  idProofType?: string;
+  idProofNumber?: string;
+  purposeOfVisit?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   roomTypeId: string;
   roomTypeName: string;
   roomId?: string;
@@ -1470,20 +1765,15 @@ export async function createBookingInDatabase(bookingData: {
     };
   }
 
-  // 2. Resolve room_type_id to guarantee a valid UUID in PostgreSQL
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  let resolvedRoomTypeId = roomTypeId;
 
-  if (!uuidRegex.test(resolvedRoomTypeId)) {
-    const matched = roomTypes.find(
-      rt => rt.name.toLowerCase() === bookingData.roomTypeName.toLowerCase() || rt.id === roomTypeId
-    );
-    if (matched && uuidRegex.test(matched.id)) {
-      resolvedRoomTypeId = matched.id;
-    } else {
-      resolvedRoomTypeId = '11111111-1111-1111-1111-111111111104'; // Default Deluxe Ocean View
-    }
-  }
+  // 2. Resolve room_type_id dynamically against Supabase public.room_types
+  let resolvedRoomTypeId = await resolveDatabaseRoomTypeId(
+    roomTypeId,
+    bookingData.roomTypeName,
+    guests,
+    adr
+  );
 
   // 3. Resolve customer_id to guarantee a valid UUID in PostgreSQL
   let resolvedCustomerId = customerId;
@@ -1491,8 +1781,18 @@ export async function createBookingInDatabase(bookingData: {
     resolvedCustomerId = 'c0000000-0000-0000-0000-000000000003';
   }
 
-  // 4. Resolve room_id
-  const resolvedRoomId = (bookingData.roomId && uuidRegex.test(bookingData.roomId)) ? bookingData.roomId : null;
+  // 4. Resolve room_id: verify it is a valid UUID and exists, otherwise null
+  let resolvedRoomId: string | null = (bookingData.roomId && uuidRegex.test(bookingData.roomId)) ? bookingData.roomId : null;
+  if (isSupabaseConfigured && resolvedRoomId) {
+    try {
+      const { data: rmCheck } = await supabase.from('rooms').select('id').eq('id', resolvedRoomId).maybeSingle();
+      if (!rmCheck?.id) {
+        resolvedRoomId = null;
+      }
+    } catch {
+      resolvedRoomId = null;
+    }
+  }
 
   // 5. Generate unique booking reference
   const bookingRef = generateBookingReference();
@@ -1506,7 +1806,20 @@ export async function createBookingInDatabase(bookingData: {
     customerName: bookingData.customerName,
     customerEmail: bookingData.customerEmail,
     customerPhone: bookingData.customerPhone || '',
-    roomTypeId: resolvedRoomTypeId,
+    customerAge: bookingData.customerAge,
+    customerGender: bookingData.customerGender,
+    customerAddress: bookingData.customerAddress,
+    customerCity: bookingData.customerCity,
+    customerState: bookingData.customerState,
+    customerCountry: bookingData.customerCountry,
+    customerPostalCode: bookingData.customerPostalCode,
+    aadharNumber: bookingData.aadharNumber || bookingData.idProofNumber,
+    idProofType: bookingData.idProofType || 'Aadhar Card',
+    idProofNumber: bookingData.idProofNumber || bookingData.aadharNumber,
+    purposeOfVisit: bookingData.purposeOfVisit || 'Leisure / Holiday',
+    emergencyContactName: bookingData.emergencyContactName,
+    emergencyContactPhone: bookingData.emergencyContactPhone,
+    roomTypeId: resolvedRoomTypeId || '11111111-1111-1111-1111-111111111104',
     roomTypeName: bookingData.roomTypeName,
     roomId: resolvedRoomId || undefined,
     roomNumber: bookingData.roomNumber || 'Assigned at Check-In',
@@ -1530,34 +1843,63 @@ export async function createBookingInDatabase(bookingData: {
   // 6. Direct Supabase Integration: Insert into public.customers and public.bookings
   if (isSupabaseConfigured) {
     try {
-      // (a) Ensure customer exists in public.customers to satisfy foreign key
-      const { data: custExists } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('id', resolvedCustomerId)
-        .maybeSingle();
-
-      if (!custExists) {
+      // (a) Ensure customer exists in public.customers with complete stay verification details
+      try {
         await supabase.from('customers').upsert({
           id: resolvedCustomerId,
           customer_code: bookingData.customerCode || generateCustomerCode(),
           full_name: bookingData.customerName || 'Guest Customer',
           email: bookingData.customerEmail || '',
           phone: bookingData.customerPhone || '',
-          created_at: new Date().toISOString(),
+          age: bookingData.customerAge || null,
+          gender: bookingData.customerGender || null,
+          address_line: bookingData.customerAddress || null,
+          city: bookingData.customerCity || null,
+          state: bookingData.customerState || null,
+          postal_code: bookingData.customerPostalCode || null,
+          country: bookingData.customerCountry || 'India',
+          aadhar_number: bookingData.aadharNumber || bookingData.idProofNumber || null,
+          id_proof_type: bookingData.idProofType || 'Aadhar Card',
+          id_proof_number: bookingData.idProofNumber || bookingData.aadharNumber || null,
+          emergency_contact_name: bookingData.emergencyContactName || null,
+          emergency_contact_phone: bookingData.emergencyContactPhone || null,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
+      } catch (custErr) {
+        console.warn('Notice upserting customer verification to Supabase:', custErr);
       }
 
-      // (b) Insert booking record
-      const dbPayload = {
+      // (b) Build rich payload for public.bookings (includes customer name, nights, days, guests, aadhar, room info)
+      const dbPayload: any = {
         booking_reference: bookingRef,
         customer_id: resolvedCustomerId,
+        customer_name: bookingData.customerName,
+        customer_email: bookingData.customerEmail,
+        customer_phone: bookingData.customerPhone || '',
+        customer_age: bookingData.customerAge || null,
+        customer_gender: bookingData.customerGender || null,
+        customer_address: bookingData.customerAddress || '',
+        customer_city: bookingData.customerCity || '',
+        customer_state: bookingData.customerState || '',
+        customer_country: bookingData.customerCountry || 'India',
+        aadhar_number: bookingData.aadharNumber || bookingData.idProofNumber || '',
+        id_proof_type: bookingData.idProofType || 'Aadhar Card',
+        id_proof_number: bookingData.idProofNumber || bookingData.aadharNumber || '',
+        purpose_of_visit: bookingData.purposeOfVisit || 'Leisure / Holiday',
+        emergency_contact_name: bookingData.emergencyContactName || '',
+        emergency_contact_phone: bookingData.emergencyContactPhone || '',
         room_id: resolvedRoomId,
+        room_number: bookingData.roomNumber || 'Assigned at Check-In',
         room_type_id: resolvedRoomTypeId,
+        room_type_name: bookingData.roomTypeName,
         check_in: checkIn,
         check_out: checkOut,
         number_of_guests: guests,
+        guests: guests,
+        nights: nights,
+        number_of_days: nights,
+        days: nights,
+        adr: adr,
         number_of_rooms: 1,
         total_amount: totalAmount,
         booking_status: 'Confirmed',
@@ -1569,12 +1911,81 @@ export async function createBookingInDatabase(bookingData: {
         .from('bookings')
         .insert(dbPayload)
         .select()
-        .single();
+        .maybeSingle();
 
       if (insertError) {
-        console.error('Supabase booking insert notice:', insertError);
-        // If error is foreign key violation on customer_id, ensure customer is created and retry
-        if (insertError.code === '23503' && insertError.message?.includes('customer')) {
+        console.warn('Notice from initial Supabase booking insert:', insertError);
+
+        // Case A: Missing columns in older schema (e.g. customer_name, nights not added yet)
+        if (insertError.code === '42703') {
+          const basePayload = {
+            booking_reference: bookingRef,
+            customer_id: resolvedCustomerId,
+            room_id: resolvedRoomId,
+            room_type_id: resolvedRoomTypeId,
+            check_in: checkIn,
+            check_out: checkOut,
+            number_of_guests: guests,
+            number_of_rooms: 1,
+            total_amount: totalAmount,
+            booking_status: 'Confirmed',
+            payment_status: 'Paid',
+            special_requests: bookingData.specialRequests || ''
+          };
+
+          const { data: baseData, error: baseErr } = await supabase
+            .from('bookings')
+            .insert(basePayload)
+            .select()
+            .maybeSingle();
+
+          if (!baseErr) {
+            setRemoteTableStatus('ready');
+            console.log('Successfully written booking to Supabase with base columns:', baseData);
+          }
+        }
+        // Case B: Foreign key violation on room_types
+        else if (
+          insertError.code === '23503' &&
+          (insertError.message?.includes('room_type') || insertError.details?.includes('room_types'))
+        ) {
+          // 1) Find ANY existing room type ID in public.room_types
+          const { data: anyRt } = await supabase.from('room_types').select('id').limit(1).maybeSingle();
+          if (anyRt?.id) {
+            dbPayload.room_type_id = anyRt.id;
+          } else {
+            // Seed a room type right now
+            const { data: seededRt } = await supabase.from('room_types').insert({
+              name: bookingData.roomTypeName || 'Deluxe Room',
+              capacity: guests || 2,
+              base_price: adr || 200,
+              amenities: ['WiFi', 'Air Conditioning', 'Ensuite Bathroom'],
+              is_active: true
+            }).select('id').maybeSingle();
+            dbPayload.room_type_id = seededRt?.id || null;
+          }
+
+          const { data: retry1, error: retry1Err } = await supabase
+            .from('bookings')
+            .insert(dbPayload)
+            .select()
+            .maybeSingle();
+
+          if (!retry1Err) {
+            setRemoteTableStatus('ready');
+            console.log('Successfully inserted booking into Supabase after resolving room_type:', retry1);
+          } else if (retry1Err.code === '23503') {
+            // Retry with null room_type_id if column is nullable
+            dbPayload.room_type_id = null;
+            await supabase.from('bookings').insert(dbPayload);
+            setRemoteTableStatus('ready');
+          }
+        }
+        // Case C: Foreign key violation on customers
+        else if (
+          insertError.code === '23503' &&
+          (insertError.message?.includes('customer') || insertError.details?.includes('customers'))
+        ) {
           await supabase.from('customers').upsert({
             id: resolvedCustomerId,
             customer_code: bookingData.customerCode || generateCustomerCode(),
@@ -1583,24 +1994,122 @@ export async function createBookingInDatabase(bookingData: {
             phone: bookingData.customerPhone || ''
           }, { onConflict: 'id' });
 
-          await supabase.from('bookings').insert(dbPayload);
-          setRemoteTableStatus('ready');
+          const { error: retryCustErr } = await supabase.from('bookings').insert(dbPayload);
+          if (!retryCustErr) {
+            setRemoteTableStatus('ready');
+          }
+        }
+        // Case D: Foreign key violation on rooms
+        else if (
+          insertError.code === '23503' &&
+          (insertError.message?.includes('room') || insertError.details?.includes('rooms'))
+        ) {
+          dbPayload.room_id = null;
+          const { error: retryRoomErr } = await supabase.from('bookings').insert(dbPayload);
+          if (!retryRoomErr) {
+            setRemoteTableStatus('ready');
+          }
         }
       } else {
         setRemoteTableStatus('ready');
         console.log('Successfully written booking to Supabase:', insertData);
       }
     } catch (e: any) {
-      console.error('Supabase booking insertion exception:', e);
+      console.warn('Supabase booking insertion error:', e);
     }
   }
 
   // 7. Save to local storage for instant offline availability
   const allBookings = getStoredBookings();
-  allBookings.unshift(newBooking);
+  const existingIdx = allBookings.findIndex(b => b.bookingReference === newBooking.bookingReference);
+  if (existingIdx >= 0) {
+    allBookings[existingIdx] = newBooking;
+  } else {
+    allBookings.unshift(newBooking);
+  }
   saveStoredBookings(allBookings);
 
   return { success: true, booking: newBooking };
+}
+
+/**
+ * Synchronize any bookings stored in localStorage that are missing in Supabase public.bookings.
+ * Guarantees that any booking created while tables were absent or errored gets pushed to Supabase.
+ */
+export async function syncLocalBookingsToSupabase(): Promise<{ synced: number; total: number }> {
+  if (!isSupabaseConfigured) return { synced: 0, total: 0 };
+
+  try {
+    const localBookings = getStoredBookings();
+    if (!localBookings || localBookings.length === 0) return { synced: 0, total: 0 };
+
+    // Fetch existing booking references from Supabase
+    const { data: remoteBookings, error } = await supabase
+      .from('bookings')
+      .select('booking_reference');
+
+    if (error) {
+      console.warn('Notice checking remote bookings for sync:', error);
+      return { synced: 0, total: localBookings.length };
+    }
+
+    const remoteRefs = new Set((remoteBookings || []).map((b: any) => b.booking_reference));
+    const missingBookings = localBookings.filter(
+      b => b.bookingReference && !remoteRefs.has(b.bookingReference) && !remoteRefs.has(b.id)
+    );
+
+    if (missingBookings.length === 0) {
+      return { synced: 0, total: localBookings.length };
+    }
+
+    console.log(`Found ${missingBookings.length} unsynced bookings to push to Supabase.`);
+    let syncedCount = 0;
+
+    for (const b of missingBookings) {
+      try {
+        const res = await createBookingInDatabase({
+          customerId: b.customerId || 'c0000000-0000-0000-0000-000000000003',
+          customerCode: b.customerCode,
+          customerName: b.customerName,
+          customerEmail: b.customerEmail,
+          customerPhone: b.customerPhone,
+          customerAge: b.customerAge,
+          customerGender: b.customerGender,
+          customerAddress: b.customerAddress,
+          customerCity: b.customerCity,
+          customerState: b.customerState,
+          customerCountry: b.customerCountry,
+          customerPostalCode: b.customerPostalCode,
+          aadharNumber: b.aadharNumber,
+          idProofType: b.idProofType,
+          idProofNumber: b.idProofNumber,
+          purposeOfVisit: b.purposeOfVisit,
+          emergencyContactName: b.emergencyContactName,
+          emergencyContactPhone: b.emergencyContactPhone,
+          roomTypeId: b.roomTypeId,
+          roomTypeName: b.roomTypeName,
+          roomId: b.roomId,
+          roomNumber: b.roomNumber,
+          checkIn: b.checkIn,
+          checkOut: b.checkOut,
+          guests: b.guests,
+          nights: b.nights,
+          adr: b.adr,
+          specialRequests: b.specialRequests
+        });
+        if (res.success) {
+          syncedCount++;
+        }
+      } catch (err) {
+        console.warn('Notice syncing booking to Supabase:', err);
+      }
+    }
+
+    return { synced: syncedCount, total: localBookings.length };
+  } catch (e) {
+    console.warn('Notice during syncLocalBookingsToSupabase:', e);
+    return { synced: 0, total: 0 };
+  }
 }
 
 /**

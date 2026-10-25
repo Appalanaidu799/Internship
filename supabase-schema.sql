@@ -127,11 +127,33 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   booking_reference text UNIQUE NOT NULL,
   customer_id uuid NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+  customer_name text,
+  customer_email text,
+  customer_phone text,
+  customer_age integer,
+  customer_gender text,
+  customer_address text,
+  customer_city text,
+  customer_state text,
+  customer_country text,
+  aadhar_number text,
+  id_proof_type text DEFAULT 'Aadhar Card',
+  id_proof_number text,
+  purpose_of_visit text,
+  emergency_contact_name text,
+  emergency_contact_phone text,
   room_id uuid REFERENCES public.rooms(id) ON DELETE SET NULL,
-  room_type_id uuid REFERENCES public.room_types(id) ON DELETE RESTRICT,
+  room_number text,
+  room_type_id uuid REFERENCES public.room_types(id) ON DELETE SET NULL,
+  room_type_name text,
   check_in date NOT NULL,
   check_out date NOT NULL,
-  number_of_guests integer NOT NULL CHECK (number_of_guests > 0),
+  number_of_guests integer NOT NULL DEFAULT 1 CHECK (number_of_guests > 0),
+  guests integer NOT NULL DEFAULT 1 CHECK (guests > 0),
+  nights integer NOT NULL DEFAULT 1 CHECK (nights > 0),
+  number_of_days integer NOT NULL DEFAULT 1 CHECK (number_of_days > 0),
+  days integer NOT NULL DEFAULT 1 CHECK (days > 0),
+  adr numeric(10,2) DEFAULT 0,
   number_of_rooms integer NOT NULL DEFAULT 1 CHECK (number_of_rooms > 0),
   total_amount numeric(10,2) NOT NULL CHECK (total_amount >= 0),
   booking_status text NOT NULL DEFAULT 'Confirmed' CHECK (booking_status IN ('Confirmed', 'Checked-In', 'Checked-Out', 'Cancelled')),
@@ -142,8 +164,85 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   CONSTRAINT valid_booking_dates CHECK (check_out > check_in)
 );
 
+-- ==============================================================================
+-- 5b. MIGRATION: Ensure existing bookings and customers tables have all rich stay and identity columns
+-- Explicit top-level ALTER TABLE statements ensure columns exist in PostgreSQL catalog immediately
+-- ==============================================================================
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_name text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_email text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_phone text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_age integer;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_gender text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_address text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_city text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_state text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_country text DEFAULT 'India';
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_postal_code text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS aadhar_number text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS id_proof_type text DEFAULT 'Aadhar Card';
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS id_proof_number text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS purpose_of_visit text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS emergency_contact_name text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS emergency_contact_phone text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS room_number text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS room_type_name text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS number_of_guests integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS guests integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS nights integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS number_of_days integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS days integer DEFAULT 1;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS adr numeric(10,2) DEFAULT 0;
+ALTER TABLE public.bookings ALTER COLUMN room_type_id DROP NOT NULL;
+
+-- Relax foreign key constraint if room_types doesn't have the matched id
+DO $$
+BEGIN
+  ALTER TABLE public.bookings DROP CONSTRAINT IF EXISTS bookings_room_type_id_fkey;
+  ALTER TABLE public.bookings ADD CONSTRAINT bookings_room_type_id_fkey 
+    FOREIGN KEY (room_type_id) REFERENCES public.room_types(id) ON DELETE SET NULL;
+EXCEPTION WHEN OTHERS THEN
+  NULL;
+END $$;
+
+-- Ensure public.customers also has all verification and KYC columns
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS age integer;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS aadhar_number text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS id_proof_type text DEFAULT 'Aadhar Card';
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS id_proof_number text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS emergency_contact_name text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS emergency_contact_phone text;
+
+-- Safe dynamic backfill of legacy bookings using EXECUTE (prevents PostgreSQL 42703 & 42P01 errors)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'bookings' AND column_name = 'customer_name'
+  ) THEN
+    EXECUTE '
+      UPDATE public.bookings b
+      SET 
+        nights = COALESCE(b.nights, GREATEST(1, (b.check_out - b.check_in))),
+        number_of_days = COALESCE(b.number_of_days, GREATEST(1, (b.check_out - b.check_in))),
+        days = COALESCE(b.days, GREATEST(1, (b.check_out - b.check_in))),
+        guests = COALESCE(b.guests, b.number_of_guests, 1),
+        number_of_guests = COALESCE(b.number_of_guests, b.guests, 1),
+        adr = COALESCE(b.adr, CASE WHEN (b.check_out - b.check_in) > 0 THEN ROUND(b.total_amount / (b.check_out - b.check_in), 2) ELSE b.total_amount END),
+        customer_name = COALESCE(b.customer_name, (SELECT c.full_name FROM public.customers c WHERE c.id = b.customer_id), ''Guest Customer''),
+        customer_email = COALESCE(b.customer_email, (SELECT c.email FROM public.customers c WHERE c.id = b.customer_id), ''''),
+        customer_phone = COALESCE(b.customer_phone, (SELECT c.phone FROM public.customers c WHERE c.id = b.customer_id), ''''),
+        room_type_name = COALESCE(b.room_type_name, (SELECT rt.name FROM public.room_types rt WHERE rt.id = b.room_type_id), ''Deluxe Room'')
+      WHERE (b.customer_name IS NULL OR b.nights IS NULL OR b.room_type_name IS NULL);
+    ';
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  -- Safe fallback: do not fail entire migration if legacy backfill finds missing optional tables
+  NULL;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_bookings_customer ON public.bookings(customer_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_room ON public.bookings(room_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_room_type ON public.bookings(room_type_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_dates ON public.bookings(check_in, check_out);
 CREATE INDEX IF NOT EXISTS idx_bookings_reference ON public.bookings(booking_reference);
 

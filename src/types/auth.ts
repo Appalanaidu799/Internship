@@ -12,12 +12,16 @@ export interface CustomerProfileData {
   email: string;
   phone?: string;
   date_of_birth?: string; // YYYY-MM-DD
+  age?: number;
   gender?: GenderOption | string;
   address_line?: string;
   city?: string;
   state?: string;
   postal_code?: string;
   country?: string;
+  aadhar_number?: string;
+  id_proof_type?: string;
+  id_proof_number?: string;
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
   created_at?: string;

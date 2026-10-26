@@ -20,6 +20,8 @@ import {
   generateRazorpayOrderId,
   loadRazorpayScript,
   RAZORPAY_TEST_KEY,
+  IS_RAZORPAY_TEST_MODE,
+  RAZORPAY_TEST_CREDENTIALS,
   RazorpaySuccessResult
 } from '../../lib/razorpay';
 
@@ -123,9 +125,9 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
       }
     }
 
-    // Direct, friction-free Razorpay checkout simulation
+    // Direct, friction-free Razorpay checkout simulation in Test Mode
     setTimeout(() => {
-      const paymentId = generateRazorpayPaymentId();
+      const paymentId = generateRazorpayPaymentId(true);
       const orderId = generateRazorpayOrderId();
       let methodLabel = 'Razorpay UPI';
       if (selectedMethod === 'upi') {
@@ -143,10 +145,14 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
         methodLabel = 'Razorpay Wallet';
       }
 
+      if (IS_RAZORPAY_TEST_MODE) {
+        methodLabel = `${methodLabel} [Test Mode]`;
+      }
+
       const successData: RazorpaySuccessResult = {
         razorpay_payment_id: paymentId,
         razorpay_order_id: orderId,
-        razorpay_signature: `sig_${Math.random().toString(36).substring(2, 12)}`,
+        razorpay_signature: `sig_test_${Math.random().toString(36).substring(2, 12)}`,
         payment_method: methodLabel,
         amount_inr: amountInINR,
         timestamp: new Date().toISOString()
@@ -180,10 +186,20 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
               R
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-base tracking-wide">Razorpay</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Verified Gateway
+                {IS_RAZORPAY_TEST_MODE ? (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/25 text-amber-300 border border-amber-500/40 uppercase tracking-wide flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                    Test Mode
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Live Gateway
+                  </span>
+                )}
+                <span className="font-mono text-[10px] text-slate-300 bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700">
+                  {RAZORPAY_TEST_KEY}
                 </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5">Naidu Hotel & Luxury Suites · Visakhapatnam</p>
@@ -204,6 +220,19 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Test Mode Notification Banner */}
+        {IS_RAZORPAY_TEST_MODE && (
+          <div className="bg-amber-500/10 border-b border-amber-500/20 px-5 py-2 flex items-center justify-between text-[11px] text-amber-900 bg-amber-50">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>
+                <strong>Razorpay Test Mode Active:</strong> Using sandbox test key <code className="font-mono font-bold text-amber-800 bg-amber-100 px-1 py-0.5 rounded">{RAZORPAY_TEST_KEY}</code>
+              </span>
+            </div>
+            <span className="text-[10px] text-amber-700 font-medium shrink-0">No Real Money Charged</span>
+          </div>
+        )}
 
         {paymentSuccess ? (
           /* Payment Successful View */
@@ -440,6 +469,53 @@ export const RazorpayCheckoutModal: React.FC<RazorpayCheckoutModalProps> = ({
                     className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
                   />
                 </div>
+
+                {/* Razorpay Test Cards Helper */}
+                {IS_RAZORPAY_TEST_MODE && (
+                  <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Razorpay Test Cards (Click to auto-fill):
+                    </span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCardNumber('4532 8920 1209 8821');
+                          setCardExpiry('08/29');
+                          setCardCvv('492');
+                        }}
+                        className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-[10px] font-medium text-blue-900 border border-blue-200 text-center transition-colors"
+                      >
+                        <span className="font-bold block text-blue-700">Visa Test</span>
+                        <span className="font-mono text-[9px] text-slate-500">4532 •••• 8821</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCardNumber('5085 0500 0000 0005');
+                          setCardExpiry('10/28');
+                          setCardCvv('876');
+                        }}
+                        className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[10px] font-medium text-emerald-900 border border-emerald-200 text-center transition-colors"
+                      >
+                        <span className="font-bold block text-emerald-700">RuPay Test</span>
+                        <span className="font-mono text-[9px] text-slate-500">5085 •••• 0005</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCardNumber('5123 4567 8901 2345');
+                          setCardExpiry('12/30');
+                          setCardCvv('123');
+                        }}
+                        className="p-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-[10px] font-medium text-purple-900 border border-purple-200 text-center transition-colors"
+                      >
+                        <span className="font-bold block text-purple-700">Mastercard</span>
+                        <span className="font-mono text-[9px] text-slate-500">5123 •••• 2345</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

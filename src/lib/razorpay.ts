@@ -79,18 +79,34 @@ export interface RazorpaySuccessResult {
 }
 
 export const RAZORPAY_TEST_KEY =
-  (import.meta.env.VITE_RAZORPAY_KEY_ID as string) || 'rzp_test_NaiduHotel2026';
+  (import.meta.env.VITE_RAZORPAY_KEY_ID as string) || 'rzp_test_1DP5mmOlF5G5ag';
+
+export const IS_RAZORPAY_TEST_MODE = RAZORPAY_TEST_KEY.startsWith('rzp_test_');
 
 /**
- * Generates an authentic-looking Razorpay Payment ID (e.g., pay_Nxk9120Ja882L)
+ * Standard Razorpay Sandbox Test Credentials
  */
-export function generateRazorpayPaymentId(): string {
+export const RAZORPAY_TEST_CREDENTIALS = {
+  keyId: RAZORPAY_TEST_KEY,
+  mode: 'Test Mode (Sandbox)',
+  testCards: [
+    { type: 'Visa Test Card', number: '4532 8920 1209 8821', exp: '08/29', cvv: '492' },
+    { type: 'Mastercard Test Card', number: '5123 4567 8901 2345', exp: '12/30', cvv: '123' },
+    { type: 'RuPay Test Card', number: '5085 0500 0000 0005', exp: '10/28', cvv: '876' }
+  ],
+  testUpiApps: ['Google Pay', 'PhonePe', 'Paytm', 'BHIM', 'CRED', 'Amazon Pay']
+};
+
+/**
+ * Generates an authentic-looking Razorpay Payment ID (e.g., pay_test_Nxk9120Ja882L)
+ */
+export function generateRazorpayPaymentId(isTest: boolean = true): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let rand = '';
   for (let i = 0; i < 14; i++) {
     rand += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return `pay_${rand}`;
+  return isTest ? `pay_test_${rand}` : `pay_${rand}`;
 }
 
 export function generateRazorpayOrderId(): string {
@@ -99,5 +115,5 @@ export function generateRazorpayOrderId(): string {
   for (let i = 0; i < 14; i++) {
     rand += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return `order_${rand}`;
+  return `order_test_${rand}`;
 }

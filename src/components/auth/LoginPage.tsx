@@ -134,6 +134,51 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             </div>
           )}
 
+          {/* Quick Demo Access Pills */}
+          <div className="mb-5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2 text-center">
+              Quick Demo Access
+            </p>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={async () => {
+                  setEmail('appalanaidu.dev@gmail.com');
+                  setPassword('password');
+                  const res = await login('appalanaidu.dev@gmail.com', 'password');
+                  if (res.success) onSuccess();
+                }}
+                className="py-1.5 px-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-semibold border border-indigo-200 transition-colors text-center"
+              >
+                Admin
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setEmail('manager@naiduhotel.com');
+                  setPassword('password');
+                  const res = await login('manager@naiduhotel.com', 'password');
+                  if (res.success) onSuccess();
+                }}
+                className="py-1.5 px-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-semibold border border-emerald-200 transition-colors text-center"
+              >
+                Management
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setEmail('customer@gmail.com');
+                  setPassword('password');
+                  const res = await login('customer@gmail.com', 'password');
+                  if (res.success) onSuccess();
+                }}
+                className="py-1.5 px-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold border border-blue-200 transition-colors text-center"
+              >
+                Customer
+              </button>
+            </div>
+          </div>
+
           <form className="space-y-4" onSubmit={handleSubmit}>
             {/* Email Field */}
             <div>

@@ -432,8 +432,42 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 `;
 
-// Initial users: purely empty array, all accounts come fresh from Supabase database
-export const SEED_USERS: UserProfile[] = [];
+// Seed users for offline fallback and seamless testing across Admin, Management, and Customer roles
+export const SEED_USERS: UserProfile[] = [
+  {
+    id: '8ef2e174-d93f-4961-8259-94ce37e202a8',
+    full_name: 'Appala Naidu',
+    email: 'appalanaidu.dev@gmail.com',
+    phone: '+91 99000 11223',
+    role: 'admin',
+    status: 'active',
+    profile_image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+    created_at: '2025-01-01T00:00:00.000Z',
+    updated_at: '2025-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'm-4',
+    full_name: 'Deepa Rao',
+    email: 'manager@naiduhotel.com',
+    phone: '+91 98765 43210',
+    role: 'management',
+    status: 'active',
+    profile_image: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&auto=format&fit=crop&q=80',
+    created_at: '2025-05-01T00:00:00.000Z',
+    updated_at: '2025-05-01T00:00:00.000Z'
+  },
+  {
+    id: 'c0000000-0000-0000-0000-000000000003',
+    full_name: 'Rajesh Naidu',
+    email: 'customer@gmail.com',
+    phone: '+1 (555) 234-5678',
+    role: 'customer',
+    status: 'active',
+    profile_image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80',
+    created_at: '2025-01-10T08:00:00.000Z',
+    updated_at: '2025-01-10T08:00:00.000Z'
+  }
+];
 
 // Local Storage Keys
 export const STORAGE_KEY_USERS = 'naidu_supabase_users_table';
@@ -663,12 +697,24 @@ export function getStoredUsers(): UserProfile[] {
     const raw = localStorage.getItem(STORAGE_KEY_USERS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const existingEmails = new Set(parsed.map((u: any) => u.email?.toLowerCase()));
+        let added = false;
+        SEED_USERS.forEach(su => {
+          if (!existingEmails.has(su.email.toLowerCase())) {
+            parsed.push(su);
+            added = true;
+          }
+        });
+        if (added) saveStoredUsers(parsed);
+        return parsed;
+      }
     }
   } catch (e) {
     console.error('Failed to parse local users', e);
   }
-  return [];
+  saveStoredUsers(SEED_USERS);
+  return SEED_USERS;
 }
 
 export function saveStoredUsers(users: UserProfile[]) {

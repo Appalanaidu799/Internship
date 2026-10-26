@@ -83,9 +83,16 @@ interface HotelContextType {
     aadharNumber?: string;
     idProofType?: string;
     idProofNumber?: string;
+    aadharDocumentName?: string;
+    aadharDocumentData?: string;
     purposeOfVisit?: string;
     emergencyContactName?: string;
     emergencyContactPhone?: string;
+    paymentStatus?: 'Pending' | 'Paid' | 'Refunded' | 'Failed';
+    paymentMethod?: string;
+    razorpayPaymentId?: string;
+    razorpayOrderId?: string;
+    razorpaySignature?: string;
   }) => Promise<Booking>;
   refreshCustomerBookings: () => Promise<void>;
   refreshAllData: () => Promise<void>;
@@ -366,9 +373,16 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     aadharNumber?: string;
     idProofType?: string;
     idProofNumber?: string;
+    aadharDocumentName?: string;
+    aadharDocumentData?: string;
     purposeOfVisit?: string;
     emergencyContactName?: string;
     emergencyContactPhone?: string;
+    paymentStatus?: 'Pending' | 'Paid' | 'Refunded' | 'Failed';
+    paymentMethod?: string;
+    razorpayPaymentId?: string;
+    razorpayOrderId?: string;
+    razorpaySignature?: string;
   }): Promise<Booking> => {
     const customerId = user?.id || 'c0000000-0000-0000-0000-000000000003';
     const customerCode = customerProfile?.customer_code || 'CUS-NAIDU001';
@@ -392,6 +406,8 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       aadharNumber: data.aadharNumber || customerProfile?.aadhar_number || data.idProofNumber || undefined,
       idProofType: data.idProofType || customerProfile?.id_proof_type || 'Aadhar Card',
       idProofNumber: data.idProofNumber || customerProfile?.id_proof_number || data.aadharNumber || undefined,
+      aadharDocumentName: data.aadharDocumentName,
+      aadharDocumentData: data.aadharDocumentData,
       purposeOfVisit: data.purposeOfVisit || 'Leisure / Holiday',
       emergencyContactName: data.emergencyContactName || customerProfile?.emergency_contact_name || undefined,
       emergencyContactPhone: data.emergencyContactPhone || customerProfile?.emergency_contact_phone || undefined,
@@ -402,7 +418,12 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       guests: data.guests,
       nights: data.nights,
       adr: data.adr,
-      specialRequests: data.specialRequests
+      specialRequests: data.specialRequests,
+      paymentStatus: data.paymentStatus || 'Paid',
+      paymentMethod: data.paymentMethod || 'Razorpay',
+      razorpayPaymentId: data.razorpayPaymentId,
+      razorpayOrderId: data.razorpayOrderId,
+      razorpaySignature: data.razorpaySignature
     });
 
     if (!res.success || !res.booking) {
@@ -417,7 +438,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const notif: NotificationItem = {
       id: `notif-${Date.now()}`,
       title: 'New Direct Customer Reservation',
-      message: `${newBooking.customerName} (${customerCode}) confirmed ${newBooking.roomTypeName} (${data.nights} nights, $${newBooking.totalAmount}). Ref: ${newBooking.bookingReference}`,
+      message: `${newBooking.customerName} (${customerCode}) confirmed ${newBooking.roomTypeName} (${data.nights} nights, ₹${newBooking.totalAmount.toLocaleString('en-IN')}). Ref: ${newBooking.bookingReference}`,
       time: 'Just now',
       type: 'booking',
       read: false

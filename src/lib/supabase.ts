@@ -197,6 +197,10 @@ ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS nights integer DEFAULT 1;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS number_of_days integer DEFAULT 1;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS days integer DEFAULT 1;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS adr numeric(10,2) DEFAULT 0;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS payment_method text DEFAULT 'Razorpay';
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS razorpay_payment_id text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS razorpay_order_id text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS razorpay_signature text;
 ALTER TABLE public.bookings ALTER COLUMN room_type_id DROP NOT NULL;
 
 -- Relax foreign key constraint if room_types doesn't have the matched id
@@ -487,7 +491,7 @@ export const INITIAL_FALLBACK_ROOM_TYPES: RoomType[] = [
     code: 'SGL',
     description: 'Cozy private room with single bed, ergonomic workspace, and high-speed Wi-Fi.',
     capacity: 1,
-    basePrice: 120,
+    basePrice: 999,
     amenities: ['High-Speed WiFi', 'Workstation Desk', 'Ensuite Shower', 'Air Conditioning'],
     status: 'Active',
     totalInventory: 10,
@@ -501,7 +505,7 @@ export const INITIAL_FALLBACK_ROOM_TYPES: RoomType[] = [
     code: 'DBL',
     description: 'Spacious twin or queen arrangement ideal for couples or traveling partners.',
     capacity: 2,
-    basePrice: 180,
+    basePrice: 1499,
     amenities: ['High-Speed WiFi', 'Queen Bed / Twin', 'Smart HDTV', 'Coffee Maker', 'Balcony'],
     status: 'Active',
     totalInventory: 15,
@@ -515,7 +519,7 @@ export const INITIAL_FALLBACK_ROOM_TYPES: RoomType[] = [
     code: 'TRP',
     description: 'Generously apportioned suite featuring three single beds or king + single with lounge.',
     capacity: 3,
-    basePrice: 240,
+    basePrice: 2199,
     amenities: ['High-Speed WiFi', '3 Individual Beds', 'Mini Bar', 'Walk-in Wardrobe', 'Seaside Balcony'],
     status: 'Active',
     totalInventory: 8,
@@ -529,7 +533,7 @@ export const INITIAL_FALLBACK_ROOM_TYPES: RoomType[] = [
     code: 'DLX-OCN',
     description: 'Uninterrupted panoramic coastline vistas with plush king bedding and private terrace.',
     capacity: 2,
-    basePrice: 285,
+    basePrice: 2799,
     amenities: ['Ocean View Balcony', 'King Bed', 'Rain Shower', 'Nespresso Bar', 'Smart 65-inch TV'],
     status: 'Active',
     totalInventory: 20,
@@ -543,7 +547,7 @@ export const INITIAL_FALLBACK_ROOM_TYPES: RoomType[] = [
     code: 'EXE-STE',
     description: 'Executive lounge access, separate meeting parlor, and complimentary boardroom privileges.',
     capacity: 4,
-    basePrice: 395,
+    basePrice: 3999,
     amenities: ['Executive Lounge', 'Private Meeting Table', 'Soaking Tub', 'High-Speed Mesh WiFi', 'Butler Service'],
     status: 'Active',
     totalInventory: 12,
@@ -557,7 +561,7 @@ export const INITIAL_FALLBACK_ROOM_TYPES: RoomType[] = [
     code: 'GRD-VLA',
     description: 'Private villa garden enclave with private plunge jacuzzi and secluded sundeck.',
     capacity: 6,
-    basePrice: 460,
+    basePrice: 5499,
     amenities: ['Private Plunge Pool', 'Botanical Garden Terrace', 'Full Kitchenette', 'Dual Vanities', 'In-villa Dining'],
     status: 'Active',
     totalInventory: 6,
@@ -571,7 +575,7 @@ export const INITIAL_FALLBACK_ROOM_TYPES: RoomType[] = [
     code: 'PRS-PNT',
     description: 'Top-floor 3,200 sq ft crowning residence with 360-degree panorama, chef pantry, and 24/7 dedicated concierge.',
     capacity: 8,
-    basePrice: 850,
+    basePrice: 8999,
     amenities: ['360 Ocean Panorama', 'Private Elevator Access', 'Chef Kitchen', 'Grand Piano', 'Personal Concierge'],
     status: 'Active',
     totalInventory: 2,
@@ -582,15 +586,15 @@ export const INITIAL_FALLBACK_ROOM_TYPES: RoomType[] = [
 ];
 
 export const INITIAL_FALLBACK_ROOMS: Room[] = [
-  { id: '22222222-2222-2222-2222-222222222101', roomNumber: 'Room 101', roomTypeId: '11111111-1111-1111-1111-111111111101', roomTypeName: 'Single Sharing Room', floor: 1, price: 120, status: 'Available' },
-  { id: '22222222-2222-2222-2222-222222222102', roomNumber: 'Room 102', roomTypeId: '11111111-1111-1111-1111-111111111102', roomTypeName: 'Double Sharing Room', floor: 1, price: 180, status: 'Available' },
-  { id: '22222222-2222-2222-2222-222222222103', roomNumber: 'Room 103', roomTypeId: '11111111-1111-1111-1111-111111111103', roomTypeName: 'Triple Sharing Room', floor: 1, price: 240, status: 'Available' },
-  { id: '22222222-2222-2222-2222-222222222201', roomNumber: 'Room 201', roomTypeId: '11111111-1111-1111-1111-111111111104', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Available' },
-  { id: '22222222-2222-2222-2222-222222222202', roomNumber: 'Room 202', roomTypeId: '11111111-1111-1111-1111-111111111104', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 285, status: 'Occupied' },
-  { id: '22222222-2222-2222-2222-222222222301', roomNumber: 'Room 301', roomTypeId: '11111111-1111-1111-1111-111111111105', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Available' },
-  { id: '22222222-2222-2222-2222-222222222302', roomNumber: 'Room 302', roomTypeId: '11111111-1111-1111-1111-111111111105', roomTypeName: 'Executive Business Suite', floor: 3, price: 395, status: 'Maintenance' },
-  { id: '22222222-2222-2222-2222-222222222401', roomNumber: 'Villa 401', roomTypeId: '11111111-1111-1111-1111-111111111106', roomTypeName: 'Premier Garden Villa', floor: 4, price: 460, status: 'Available' },
-  { id: '22222222-2222-2222-2222-222222222501', roomNumber: 'Penthouse 501', roomTypeId: '11111111-1111-1111-1111-111111111107', roomTypeName: 'Luxery Presidential Penthouse', floor: 5, price: 850, status: 'Available' }
+  { id: '22222222-2222-2222-2222-222222222101', roomNumber: 'Room 101', roomTypeId: '11111111-1111-1111-1111-111111111101', roomTypeName: 'Single Sharing Room', floor: 1, price: 999, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222102', roomNumber: 'Room 102', roomTypeId: '11111111-1111-1111-1111-111111111102', roomTypeName: 'Double Sharing Room', floor: 1, price: 1499, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222103', roomNumber: 'Room 103', roomTypeId: '11111111-1111-1111-1111-111111111103', roomTypeName: 'Triple Sharing Room', floor: 1, price: 2199, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222201', roomNumber: 'Room 201', roomTypeId: '11111111-1111-1111-1111-111111111104', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 2799, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222202', roomNumber: 'Room 202', roomTypeId: '11111111-1111-1111-1111-111111111104', roomTypeName: 'Deluxe Ocean View', floor: 2, price: 2799, status: 'Occupied' },
+  { id: '22222222-2222-2222-2222-222222222301', roomNumber: 'Room 301', roomTypeId: '11111111-1111-1111-1111-111111111105', roomTypeName: 'Executive Business Suite', floor: 3, price: 3999, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222302', roomNumber: 'Room 302', roomTypeId: '11111111-1111-1111-1111-111111111105', roomTypeName: 'Executive Business Suite', floor: 3, price: 3999, status: 'Maintenance' },
+  { id: '22222222-2222-2222-2222-222222222401', roomNumber: 'Villa 401', roomTypeId: '11111111-1111-1111-1111-111111111106', roomTypeName: 'Premier Garden Villa', floor: 4, price: 5499, status: 'Available' },
+  { id: '22222222-2222-2222-2222-222222222501', roomNumber: 'Penthouse 501', roomTypeId: '11111111-1111-1111-1111-111111111107', roomTypeName: 'Luxery Presidential Penthouse', floor: 5, price: 8999, status: 'Available' }
 ];
 
 export const INITIAL_FALLBACK_BOOKINGS: Booking[] = [
@@ -609,8 +613,8 @@ export const INITIAL_FALLBACK_BOOKINGS: Booking[] = [
     checkOut: '2026-10-26',
     nights: 4,
     guests: 2,
-    adr: 285,
-    totalAmount: 1140,
+    adr: 2799,
+    totalAmount: 11196,
     status: 'Confirmed',
     paymentStatus: 'Paid',
     cancellationProbability: 14,
@@ -636,8 +640,8 @@ export const INITIAL_FALLBACK_BOOKINGS: Booking[] = [
     checkOut: '2026-08-14',
     nights: 4,
     guests: 2,
-    adr: 395,
-    totalAmount: 1580,
+    adr: 3999,
+    totalAmount: 15996,
     status: 'Checked-Out',
     paymentStatus: 'Paid',
     cancellationProbability: 5,
@@ -703,7 +707,19 @@ export function getStoredBookings(): Booking[] {
     const raw = localStorage.getItem(STORAGE_KEY_BOOKINGS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Upgrade any legacy dollar prices (< 900) to Indian Rupee equivalents
+        if (parsed.some((item: any) => item.adr && item.adr < 900)) {
+          const updated = parsed.map((b: any) => (b.adr && b.adr < 900) ? {
+            ...b,
+            adr: b.adr <= 120 ? 999 : b.adr <= 180 ? 1499 : b.adr <= 240 ? 2199 : 2799,
+            totalAmount: (b.adr <= 120 ? 999 : b.adr <= 180 ? 1499 : b.adr <= 240 ? 2199 : 2799) * (b.nights || 1)
+          } : b);
+          saveStoredBookings(updated);
+          return updated;
+        }
+        return parsed;
+      }
     }
   } catch (e) {
     console.error('Failed to parse local bookings', e);
@@ -726,8 +742,8 @@ export function getStoredRoomTypes(): RoomType[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // If parsed items contain old non-uuid IDs (e.g. 'rt-1'), reset to standard UUID room types
-        if (parsed.some((item: any) => !item.id || item.id.startsWith('rt-'))) {
+        // Upgrade legacy non-uuid IDs or old dollar prices (< 900) to Indian Rupee tariffs
+        if (parsed.some((item: any) => !item.id || item.id.startsWith('rt-') || item.basePrice < 900)) {
           saveStoredRoomTypes(INITIAL_FALLBACK_ROOM_TYPES);
           return INITIAL_FALLBACK_ROOM_TYPES;
         }
@@ -755,8 +771,8 @@ export function getStoredRooms(): Room[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // If parsed items contain old non-uuid IDs (e.g. 'rm-101'), reset to standard UUID rooms
-        if (parsed.some((item: any) => !item.id || item.id.startsWith('rm-'))) {
+        // Upgrade legacy non-uuid IDs or old dollar prices (< 900) to Indian Rupee tariffs
+        if (parsed.some((item: any) => !item.id || item.id.startsWith('rm-') || item.price < 900)) {
           saveStoredRooms(INITIAL_FALLBACK_ROOMS);
           return INITIAL_FALLBACK_ROOMS;
         }
@@ -1351,6 +1367,10 @@ export async function fetchCustomerBookingsFromDatabase(customerId: string): Pro
             totalAmount: Number(b.total_amount),
             status: b.booking_status as BookingStatus,
             paymentStatus: b.payment_status || 'Paid',
+            paymentMethod: b.payment_method || 'Razorpay',
+            razorpayPaymentId: b.razorpay_payment_id || undefined,
+            razorpayOrderId: b.razorpay_order_id || undefined,
+            razorpaySignature: b.razorpay_signature || undefined,
             cancellationProbability: 10,
             cancellationRisk: 'LOW',
             leadTimeDays: 14,
@@ -1435,6 +1455,10 @@ export async function fetchAllBookingsFromDatabase(): Promise<Booking[]> {
             totalAmount: Number(b.total_amount),
             status: b.booking_status as BookingStatus,
             paymentStatus: b.payment_status || 'Paid',
+            paymentMethod: b.payment_method || 'Razorpay',
+            razorpayPaymentId: b.razorpay_payment_id || undefined,
+            razorpayOrderId: b.razorpay_order_id || undefined,
+            razorpaySignature: b.razorpay_signature || undefined,
             cancellationProbability: 10,
             cancellationRisk: 'LOW',
             leadTimeDays: 14,
@@ -1725,6 +1749,8 @@ export async function createBookingInDatabase(bookingData: {
   aadharNumber?: string;
   idProofType?: string;
   idProofNumber?: string;
+  aadharDocumentName?: string;
+  aadharDocumentData?: string;
   purposeOfVisit?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
@@ -1738,6 +1764,11 @@ export async function createBookingInDatabase(bookingData: {
   nights: number;
   adr: number;
   specialRequests?: string;
+  paymentStatus?: 'Pending' | 'Paid' | 'Refunded' | 'Failed';
+  paymentMethod?: string;
+  razorpayPaymentId?: string;
+  razorpayOrderId?: string;
+  razorpaySignature?: string;
 }): Promise<{ success: boolean; booking?: Booking; error?: string }> {
   const { customerId, roomTypeId, checkIn, checkOut, guests, nights, adr } = bookingData;
 
@@ -1816,6 +1847,8 @@ export async function createBookingInDatabase(bookingData: {
     aadharNumber: bookingData.aadharNumber || bookingData.idProofNumber,
     idProofType: bookingData.idProofType || 'Aadhar Card',
     idProofNumber: bookingData.idProofNumber || bookingData.aadharNumber,
+    aadharDocumentName: bookingData.aadharDocumentName,
+    aadharDocumentData: bookingData.aadharDocumentData,
     purposeOfVisit: bookingData.purposeOfVisit || 'Leisure / Holiday',
     emergencyContactName: bookingData.emergencyContactName,
     emergencyContactPhone: bookingData.emergencyContactPhone,
@@ -1830,7 +1863,11 @@ export async function createBookingInDatabase(bookingData: {
     adr,
     totalAmount,
     status: 'Confirmed',
-    paymentStatus: 'Paid',
+    paymentStatus: (bookingData.paymentStatus || 'Paid') as any,
+    paymentMethod: bookingData.paymentMethod || 'Razorpay',
+    razorpayPaymentId: bookingData.razorpayPaymentId,
+    razorpayOrderId: bookingData.razorpayOrderId,
+    razorpaySignature: bookingData.razorpaySignature,
     cancellationProbability: 10,
     cancellationRisk: 'LOW',
     leadTimeDays: Math.max(1, Math.ceil((d1.getTime() - Date.now()) / (1000 * 3600 * 24))),
@@ -1903,7 +1940,11 @@ export async function createBookingInDatabase(bookingData: {
         number_of_rooms: 1,
         total_amount: totalAmount,
         booking_status: 'Confirmed',
-        payment_status: 'Paid',
+        payment_status: bookingData.paymentStatus || 'Paid',
+        payment_method: bookingData.paymentMethod || 'Razorpay',
+        razorpay_payment_id: bookingData.razorpayPaymentId || null,
+        razorpay_order_id: bookingData.razorpayOrderId || null,
+        razorpay_signature: bookingData.razorpaySignature || null,
         special_requests: bookingData.specialRequests || ''
       };
 
@@ -2095,7 +2136,12 @@ export async function syncLocalBookingsToSupabase(): Promise<{ synced: number; t
           guests: b.guests,
           nights: b.nights,
           adr: b.adr,
-          specialRequests: b.specialRequests
+          specialRequests: b.specialRequests,
+          paymentStatus: b.paymentStatus || 'Paid',
+          paymentMethod: b.paymentMethod || 'Razorpay',
+          razorpayPaymentId: b.razorpayPaymentId,
+          razorpayOrderId: b.razorpayOrderId,
+          razorpaySignature: b.razorpaySignature
         });
         if (res.success) {
           syncedCount++;

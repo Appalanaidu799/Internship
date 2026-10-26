@@ -32,10 +32,10 @@ export const AdminAnalytics: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           title="Average ADR"
-          value="$342"
+          value="₹2,450"
           change="+6.8%"
           trend="up"
-          subtext="vs $320 prior cycle"
+          subtext="vs ₹2,280 prior cycle"
           icon={<DollarSign className="w-5 h-5 text-emerald-600" />}
         />
         <KpiCard
@@ -48,7 +48,7 @@ export const AdminAnalytics: React.FC = () => {
         />
         <KpiCard
           title="RevPAR (Yield)"
-          value="$268"
+          value="₹1,920"
           change="+11.3%"
           trend="up"
           subtext="revenue per available room"
@@ -85,7 +85,7 @@ export const AdminAnalytics: React.FC = () => {
 
         {/* Occupancy and ADR Trend */}
         <ChartCard
-          title="Occupancy Pace (%) & ADR ($)"
+          title="Occupancy Pace (%) & ADR (₹)"
           subtitle="Simultaneous ADR optimization without dampening physical occupancy"
         >
           <TrendLineChart
@@ -95,7 +95,7 @@ export const AdminAnalytics: React.FC = () => {
               secondary: m.adr
             }))}
             primaryLabel="Occupancy Rate (%)"
-            secondaryLabel="Average ADR ($)"
+            secondaryLabel="Average ADR (₹)"
             valuePrefix=""
             height={200}
           />
@@ -150,7 +150,7 @@ export const AdminAnalytics: React.FC = () => {
                   <span className="font-semibold text-slate-800">{seg.type}</span>
                   <div className="flex items-center gap-1.5 font-mono text-slate-600">
                     <span className="font-bold text-slate-900">{seg.share}%</span>
-                    <span className="text-[10px] text-slate-400">(${seg.avgSpend} avg)</span>
+                    <span className="text-[10px] text-slate-400">(₹{(seg.avgSpend * 6).toLocaleString('en-IN')} avg)</span>
                   </div>
                 </div>
                 <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">

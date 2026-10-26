@@ -199,7 +199,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
             </div>
             <div>
               <span className="text-[10px] text-slate-400 uppercase font-medium">Total Billed</span>
-              <p className="font-mono font-bold text-slate-900 text-sm mt-0.5">${activeCustomerBooking.totalAmount}</p>
+              <p className="font-mono font-bold text-slate-900 text-sm mt-0.5">₹{activeCustomerBooking.totalAmount.toLocaleString('en-IN')}</p>
               <span className="text-[10px] text-emerald-600 font-medium">Guaranteed</span>
             </div>
           </div>
@@ -315,7 +315,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
               {/* Card Footer with Price and Book Now button */}
               <div className="p-5 pt-0 flex items-center justify-between border-t border-slate-100 mt-2">
                 <div>
-                  <div className="text-lg font-bold font-mono text-slate-900">${rt.basePrice}</div>
+                  <div className="text-lg font-bold font-mono text-slate-900">₹{rt.basePrice.toLocaleString('en-IN')}</div>
                   <span className="text-[10px] text-slate-400">per night + tax</span>
                 </div>
                 <button
@@ -352,7 +352,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
                 <p className="text-xs text-slate-500 line-clamp-2 mt-1">{rt.description}</p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <span className="font-mono font-bold text-slate-900 text-sm">${rt.basePrice}/nt</span>
+                <span className="font-mono font-bold text-slate-900 text-sm">₹{rt.basePrice.toLocaleString('en-IN')}/nt</span>
                 <button
                   onClick={() => handleBookNow(rt)}
                   className="text-xs font-bold text-blue-600 hover:text-blue-800"
@@ -389,7 +389,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
                 </div>
                 <div className="flex items-center gap-4 text-xs">
                   <div className="text-right">
-                    <span className="font-mono font-bold text-slate-900">${b.totalAmount}</span>
+                    <span className="font-mono font-bold text-slate-900">₹{b.totalAmount.toLocaleString('en-IN')}</span>
                     <span className="block text-[10px] text-slate-400">Total Folio</span>
                   </div>
                   <button

@@ -28,7 +28,7 @@ export const ManagementRevenueAdr: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <KpiCard
           title="Average ADR"
-          value={`$${avgAdr}`}
+          value={`₹${avgAdr.toLocaleString('en-IN')}`}
           change="+6.8%"
           trend="up"
           subtext="rate per occupied room"
@@ -36,7 +36,7 @@ export const ManagementRevenueAdr: React.FC = () => {
         />
         <KpiCard
           title="RevPAR (Yield)"
-          value={`$${revPar}`}
+          value={`₹${revPar.toLocaleString('en-IN')}`}
           change="+11.3%"
           trend="up"
           subtext="revenue per available room"
@@ -44,7 +44,7 @@ export const ManagementRevenueAdr: React.FC = () => {
         />
         <KpiCard
           title="Gross Realized Revenue"
-          value={`$${totalRevenue.toLocaleString()}`}
+          value={`₹${totalRevenue.toLocaleString('en-IN')}`}
           change="+14.2%"
           trend="up"
           subtext="folio payments secured"
@@ -63,7 +63,7 @@ export const ManagementRevenueAdr: React.FC = () => {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartCard
-          title="ADR Pace Trend ($ / Room Night)"
+          title="ADR Pace Trend (₹ / Room Night)"
           subtitle="Historic trajectory of Average Daily Rate"
         >
           <TrendLineChart
@@ -71,8 +71,8 @@ export const ManagementRevenueAdr: React.FC = () => {
               label: m.month,
               primary: m.adr
             }))}
-            primaryLabel="Average ADR ($)"
-            valuePrefix="$"
+            primaryLabel="Average ADR (₹)"
+            valuePrefix="₹"
             height={200}
           />
         </ChartCard>
@@ -84,18 +84,18 @@ export const ManagementRevenueAdr: React.FC = () => {
             <p className="text-xs text-slate-500 mb-4">Total gross revenue distributed by category</p>
             <HorizontalBarChart
               items={[
-                { label: 'Luxery Presidential Suite', value: 34200, rate: '$850 ADR', color: 'bg-indigo-600' },
-                { label: 'Premier Garden Villa', value: 28400, rate: '$460 ADR', color: 'bg-emerald-600' },
-                { label: 'Executive Business Suite', value: 38900, rate: '$395 ADR', color: 'bg-blue-600' },
-                { label: 'Deluxe Ocean View', value: 52100, rate: '$285 ADR', color: 'bg-sky-600' },
-                { label: 'Classic Deluxe Twin', value: 24800, rate: '$210 ADR', color: 'bg-slate-600' }
+                { label: 'Luxury Presidential Penthouse', value: 342000, rate: '₹8,999 ADR', color: 'bg-indigo-600' },
+                { label: 'Premier Garden Villa', value: 284000, rate: '₹5,499 ADR', color: 'bg-emerald-600' },
+                { label: 'Executive Business Suite', value: 389000, rate: '₹3,999 ADR', color: 'bg-blue-600' },
+                { label: 'Deluxe Ocean View', value: 521000, rate: '₹2,799 ADR', color: 'bg-sky-600' },
+                { label: 'Double Sharing Room', value: 248000, rate: '₹1,499 ADR', color: 'bg-slate-600' }
               ]}
               valueSuffix=""
             />
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
             <span>Peak RevPAR category: Deluxe Ocean</span>
-            <span className="font-mono font-bold text-slate-900">$178,400 Total YTD</span>
+            <span className="font-mono font-bold text-slate-900">₹17,84,000 Total YTD</span>
           </div>
         </div>
       </div>

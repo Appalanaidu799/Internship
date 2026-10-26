@@ -192,6 +192,10 @@ ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS nights integer DEFAULT 1;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS number_of_days integer DEFAULT 1;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS days integer DEFAULT 1;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS adr numeric(10,2) DEFAULT 0;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS payment_method text DEFAULT 'Razorpay';
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS razorpay_payment_id text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS razorpay_order_id text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS razorpay_signature text;
 ALTER TABLE public.bookings ALTER COLUMN room_type_id DROP NOT NULL;
 
 -- Relax foreign key constraint if room_types doesn't have the matched id

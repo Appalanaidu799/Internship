@@ -26,7 +26,7 @@ const SUGGESTED_QUESTIONS = [
 
 const MOCK_ANSWERS: Record<string, string> = {
   "Which rooms are available?":
-    "We currently have our signature suites available including the Deluxe Ocean View ($285/night), Executive Business Suite ($395/night), Premier Garden Villa ($460/night), and the Luxery Presidential Penthouse ($850/night). You can reserve directly from the 'Search Rooms' tab with instant confirmation!",
+    "We currently have our signature rooms and suites available including Single Sharing Room (₹999/night), Double Sharing Room (₹1,499/night), Triple Sharing Room (₹2,199/night), Deluxe Ocean View (₹2,799/night), Executive Business Suite (₹3,999/night), Premier Garden Villa (₹5,499/night), and the Luxury Presidential Penthouse (₹8,999/night). You can reserve directly from the 'Search Rooms' tab with instant Razorpay confirmation!",
   "What are the check-in and check-out times?":
     "Standard check-in begins at 2:00 PM (14:00) and check-out is until 11:00 AM (11:00). We also offer complimentary early check-in upon request for our direct-booking guests subject to room readiness.",
   "Can I cancel my booking?":

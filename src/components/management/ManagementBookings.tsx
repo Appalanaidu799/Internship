@@ -99,7 +99,7 @@ export const ManagementBookings: React.FC = () => {
                   <td className="py-3 px-4 text-slate-700">{b.roomTypeName}</td>
                   <td className="py-3 px-4 font-mono text-slate-600">{b.checkIn}</td>
                   <td className="py-3 px-4 font-mono text-slate-600">{b.checkOut}</td>
-                  <td className="py-3 px-4 font-mono font-bold text-slate-900">${b.adr}</td>
+                  <td className="py-3 px-4 font-mono font-bold text-slate-900">₹{b.adr.toLocaleString('en-IN')}</td>
                   <td className="py-3 px-4">
                     <StatusBadge status={b.status} size="sm" />
                   </td>
@@ -154,7 +154,7 @@ export const ManagementBookings: React.FC = () => {
             <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
               <p className="font-bold text-slate-900 text-sm">{selectedBooking.roomTypeName}</p>
               <p className="text-slate-600 font-mono mt-0.5">{selectedBooking.checkIn} → {selectedBooking.checkOut} ({selectedBooking.nights} nights, {selectedBooking.guests} guests)</p>
-              <p className="text-slate-600">Rate: ${selectedBooking.adr} / night · Total: ${selectedBooking.totalAmount}</p>
+              <p className="text-slate-600">Rate: ₹{selectedBooking.adr.toLocaleString('en-IN')} / night · Total: ₹{selectedBooking.totalAmount.toLocaleString('en-IN')}</p>
             </div>
 
             <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
@@ -167,11 +167,28 @@ export const ManagementBookings: React.FC = () => {
                   <span className="font-bold">{selectedBooking.idProofType || 'Aadhar'}:</span> {selectedBooking.aadharNumber || selectedBooking.idProofNumber}
                 </p>
               )}
+              {selectedBooking.aadharDocumentName && (
+                <p className="text-[11px] text-emerald-800 bg-emerald-50 p-1.5 rounded border border-emerald-200 font-medium truncate">
+                  <span className="font-bold">Attached Aadhar:</span> {selectedBooking.aadharDocumentName}
+                </p>
+              )}
               {selectedBooking.customerAddress && (
                 <p className="text-slate-500 text-[11px]">
                   Address: {selectedBooking.customerAddress}, {selectedBooking.customerCity}
                 </p>
               )}
+            </div>
+
+            <div className="p-2.5 bg-blue-50/70 rounded-lg border border-blue-200 flex items-center justify-between text-xs">
+              <div>
+                <span className="font-bold text-slate-900 block">Settled via {selectedBooking.paymentMethod || 'Razorpay'}</span>
+                {selectedBooking.razorpayPaymentId && (
+                  <span className="font-mono text-[10px] text-slate-600">ID: {selectedBooking.razorpayPaymentId}</span>
+                )}
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white uppercase">
+                PAID
+              </span>
             </div>
 
             {selectedBooking.specialRequests && (

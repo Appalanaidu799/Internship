@@ -8,7 +8,7 @@ export const CustomerSearchRooms: React.FC = () => {
   const { roomTypes } = useHotel();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCapacity, setSelectedCapacity] = useState<number>(0);
-  const [maxPrice, setMaxPrice] = useState<number>(1000);
+  const [maxPrice, setMaxPrice] = useState<number>(10000);
   const [selectedAmenity, setSelectedAmenity] = useState<string>('ALL');
 
   const [selectedRoom, setSelectedRoom] = useState<RoomType | null>(null);
@@ -103,13 +103,13 @@ export const CustomerSearchRooms: React.FC = () => {
               <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                 Max Nightly Budget
               </label>
-              <span className="text-xs font-mono font-bold text-slate-900">${maxPrice}/night</span>
+              <span className="text-xs font-mono font-bold text-slate-900">₹{maxPrice.toLocaleString('en-IN')}/night</span>
             </div>
             <input
               type="range"
-              min="200"
-              max="900"
-              step="50"
+              min="900"
+              max="10000"
+              step="500"
               value={maxPrice}
               onChange={e => setMaxPrice(Number(e.target.value))}
               className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mt-2"
@@ -204,7 +204,7 @@ export const CustomerSearchRooms: React.FC = () => {
 
               <div className="p-4 border-t border-slate-100 flex items-center justify-between">
                 <div>
-                  <span className="text-base font-bold font-mono text-slate-900">${rt.basePrice}</span>
+                  <span className="text-base font-bold font-mono text-slate-900">₹{rt.basePrice.toLocaleString('en-IN')}</span>
                   <span className="text-[10px] text-slate-400 block">/ night</span>
                 </div>
                 <button

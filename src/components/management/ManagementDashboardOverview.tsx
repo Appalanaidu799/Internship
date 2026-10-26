@@ -106,7 +106,7 @@ export const ManagementDashboardOverview: React.FC<ManagementDashboardOverviewPr
         />
         <KpiCard
           title="Average ADR"
-          value={`$${avgAdr}`}
+          value={`₹${avgAdr.toLocaleString('en-IN')}`}
           change="+6.8%"
           trend="up"
           subtext="average daily rate"

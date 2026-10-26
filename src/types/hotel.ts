@@ -49,6 +49,8 @@ export interface Booking {
   aadharNumber?: string;
   idProofType?: string;
   idProofNumber?: string;
+  aadharDocumentName?: string;
+  aadharDocumentData?: string;
   purposeOfVisit?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
@@ -64,6 +66,10 @@ export interface Booking {
   totalAmount: number;
   status: BookingStatus;
   paymentStatus?: 'Pending' | 'Paid' | 'Refunded' | 'Failed';
+  paymentMethod?: string;
+  razorpayPaymentId?: string;
+  razorpayOrderId?: string;
+  razorpaySignature?: string;
   cancellationProbability: number; // 0-100%
   cancellationRisk: RiskLevel;
   leadTimeDays: number;

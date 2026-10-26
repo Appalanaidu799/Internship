@@ -114,7 +114,7 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
         />
         <KpiCard
           title="Average ADR"
-          value={`$${avgAdr}`}
+          value={`₹${avgAdr.toLocaleString('en-IN')}`}
           change="+6.8%"
           trend="up"
           subtext="daily room rate"
@@ -445,8 +445,8 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
                   <td className="py-2.5 px-3 text-slate-600">{b.roomTypeName}</td>
                   <td className="py-2.5 px-3 font-mono text-slate-600">{b.checkIn}</td>
                   <td className="py-2.5 px-3 font-mono text-slate-600">{b.nights}</td>
-                  <td className="py-2.5 px-3 font-mono font-medium text-slate-900">${b.adr}</td>
-                  <td className="py-2.5 px-3 font-mono font-bold text-slate-900">${b.totalAmount}</td>
+                  <td className="py-2.5 px-3 font-mono font-medium text-slate-900">₹{b.adr.toLocaleString('en-IN')}</td>
+                  <td className="py-2.5 px-3 font-mono font-bold text-slate-900">₹{b.totalAmount.toLocaleString('en-IN')}</td>
                   <td className="py-2.5 px-3">
                     <StatusBadge status={b.status} size="sm" />
                   </td>

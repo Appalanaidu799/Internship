@@ -191,7 +191,7 @@ export const AdminBookings: React.FC = () => {
                     <td className="py-3.5 px-4 font-mono text-slate-600">{b.checkIn}</td>
                     <td className="py-3.5 px-4 font-mono text-slate-600">{b.checkOut}</td>
                     <td className="py-3.5 px-4 font-mono text-slate-600">{b.guests}</td>
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900">${b.adr}</td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900">₹{b.adr.toLocaleString('en-IN')}</td>
                     <td className="py-3.5 px-4">
                       <StatusBadge status={b.status} size="sm" />
                     </td>
@@ -348,16 +348,34 @@ export const AdminBookings: React.FC = () => {
             <div className="p-3 bg-white rounded-lg border border-slate-200 grid grid-cols-3 gap-2">
               <div>
                 <span className="text-[10px] font-semibold text-slate-400 uppercase">Daily Rate (ADR)</span>
-                <p className="font-mono font-bold text-slate-900 text-base mt-0.5">${selectedBooking.adr}</p>
+                <p className="font-mono font-bold text-slate-900 text-base mt-0.5">₹{selectedBooking.adr.toLocaleString('en-IN')}</p>
               </div>
               <div>
                 <span className="text-[10px] font-semibold text-slate-400 uppercase">Total Revenue</span>
-                <p className="font-mono font-bold text-slate-900 text-base mt-0.5">${selectedBooking.totalAmount}</p>
+                <p className="font-mono font-bold text-slate-900 text-base mt-0.5">₹{selectedBooking.totalAmount.toLocaleString('en-IN')}</p>
               </div>
               <div>
                 <span className="text-[10px] font-semibold text-slate-400 uppercase">Deposit Policy</span>
                 <p className="font-semibold text-slate-800 text-xs mt-1">{selectedBooking.depositType}</p>
               </div>
+            </div>
+
+            {/* Razorpay Settlement Details */}
+            <div className="p-3 bg-blue-50/60 rounded-lg border border-blue-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded bg-blue-600 text-white font-black text-xs flex items-center justify-center">
+                  R
+                </div>
+                <div>
+                  <span className="font-bold text-slate-900">Payment Gateway: {selectedBooking.paymentMethod || 'Razorpay'}</span>
+                  <span className="text-[10px] text-slate-500 block font-mono">
+                    ID: {selectedBooking.razorpayPaymentId || 'pay_verified'} {selectedBooking.razorpayOrderId ? `· Order: ${selectedBooking.razorpayOrderId}` : ''}
+                  </span>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white uppercase tracking-wider">
+                Settled · Paid
+              </span>
             </div>
 
             {selectedBooking.specialRequests && (

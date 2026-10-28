@@ -72,7 +72,7 @@ interface HotelContextType {
       refundPercentage?: number;
     }
   ) => Promise<void>;
-  updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
+  updateBookingStatus: (bookingId: string, status: BookingStatus) => Promise<void>;
   createCustomerBooking: (bookingData: {
     roomTypeId: string;
     roomTypeName: string;
@@ -541,23 +541,45 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     setBookings(prev => prev.map(updateFn));
     setCustomerBookings(prev => prev.map(updateFn));
-    refreshAllData();
+    await refreshAllData();
+    await refreshCustomerBookings();
   };
 
-  const updateBookingStatus = (bookingId: string, status: BookingStatus) => {
-    setBookings(prev =>
-      prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status } : b))
-    );
-    setCustomerBookings(prev =>
-      prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status } : b))
-    );
-    // Also update Supabase
+  const updateBookingStatus = async (bookingId: string, status: BookingStatus) => {
+    const updatedTimestamp = new Date().toISOString();
+    const updateFn = (b: Booking) =>
+      b.id === bookingId || b.bookingReference === bookingId ? { ...b, status } : b;
+
+    setBookings(prev => prev.map(updateFn));
+    setCustomerBookings(prev => prev.map(updateFn));
+
+    // Also update Supabase safely avoiding UUID type mismatch error
     if (isSupabaseConfigured) {
-      supabase
-        .from('bookings')
-        .update({ booking_status: status, updated_at: new Date().toISOString() })
-        .or(`id.eq.${bookingId},booking_reference.eq.${bookingId}`)
-        .then(() => refreshAllData());
+      try {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(bookingId)) {
+          const { error } = await supabase
+            .from('bookings')
+            .update({ booking_status: status, updated_at: updatedTimestamp })
+            .eq('id', bookingId);
+          if (error) {
+            await supabase
+              .from('bookings')
+              .update({ booking_status: status, updated_at: updatedTimestamp })
+              .eq('booking_reference', bookingId);
+          }
+        } else {
+          await supabase
+            .from('bookings')
+            .update({ booking_status: status, updated_at: updatedTimestamp })
+            .eq('booking_reference', bookingId);
+        }
+      } catch (err) {
+        console.warn('Notice updating booking status in Supabase:', err);
+      } finally {
+        await refreshAllData();
+        await refreshCustomerBookings();
+      }
     }
   };
 

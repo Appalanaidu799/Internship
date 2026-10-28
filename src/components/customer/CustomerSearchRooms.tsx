@@ -1,10 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Filter, Users, BedDouble, Check, DollarSign } from 'lucide-react';
 import { useHotel } from '../../context/HotelContext';
 import { RoomType } from '../../types/hotel';
 import { CustomerBookingModal } from './CustomerBookingModal';
 
-export const CustomerSearchRooms: React.FC = () => {
+export interface BookingPrefillData {
+  roomType: RoomType;
+  checkIn: string;
+  checkOut: string;
+  guests: number;
+}
+
+interface CustomerSearchRoomsProps {
+  initialBookingPrefill?: BookingPrefillData | null;
+  onClearBookingPrefill?: () => void;
+}
+
+export const CustomerSearchRooms: React.FC<CustomerSearchRoomsProps> = ({
+  initialBookingPrefill,
+  onClearBookingPrefill
+}) => {
   const { roomTypes } = useHotel();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCapacity, setSelectedCapacity] = useState<number>(0);
@@ -13,6 +28,14 @@ export const CustomerSearchRooms: React.FC = () => {
 
   const [selectedRoom, setSelectedRoom] = useState<RoomType | null>(null);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+
+  // Automatically open booking modal if prefill data was received from voice conversation
+  useEffect(() => {
+    if (initialBookingPrefill && initialBookingPrefill.roomType) {
+      setSelectedRoom(initialBookingPrefill.roomType);
+      setIsBookingModalOpen(true);
+    }
+  }, [initialBookingPrefill]);
 
   const allAmenities = Array.from(
     new Set(roomTypes.flatMap(rt => rt.amenities))
@@ -61,6 +84,34 @@ export const CustomerSearchRooms: React.FC = () => {
           Showing {filteredRooms.length} available suite types
         </span>
       </div>
+
+      {/* Voice Booking Automated Prefill Alert Banner */}
+      {initialBookingPrefill && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <Check className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-emerald-950">
+                Voice Booking Auto-Prefilled: {initialBookingPrefill.roomType.name}
+              </p>
+              <p className="text-[11px] text-emerald-800">
+                Dates: <strong>{initialBookingPrefill.checkIn}</strong> to <strong>{initialBookingPrefill.checkOut}</strong> · <strong>{initialBookingPrefill.guests} Guest(s)</strong>
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setSelectedRoom(initialBookingPrefill.roomType);
+              setIsBookingModalOpen(true);
+            }}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs shrink-0 self-start sm:self-auto"
+          >
+            Open Reservation Form
+          </button>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
@@ -225,9 +276,15 @@ export const CustomerSearchRooms: React.FC = () => {
       <CustomerBookingModal
         roomType={selectedRoom}
         isOpen={isBookingModalOpen}
+        defaultCheckIn={initialBookingPrefill?.checkIn}
+        defaultCheckOut={initialBookingPrefill?.checkOut}
+        defaultGuests={initialBookingPrefill?.guests}
         onClose={() => {
           setIsBookingModalOpen(false);
           setSelectedRoom(null);
+          if (onClearBookingPrefill) {
+            onClearBookingPrefill();
+          }
         }}
       />
     </div>

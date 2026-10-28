@@ -652,12 +652,46 @@ export const INITIAL_FALLBACK_BOOKINGS: Booking[] = [
 ];
 
 // ==============================================================================
+// UNIVERSAL STORAGE HELPER (Supports both Browser and Server-Side Node.js)
+// ==============================================================================
+const memoryStorageMap = new Map<string, string>();
+
+const safeStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+    } catch {}
+    return memoryStorageMap.get(key) || null;
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, value);
+        return;
+      }
+    } catch {}
+    memoryStorageMap.set(key, value);
+  },
+  removeItem: (key: string): void => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(key);
+        return;
+      }
+    } catch {}
+    memoryStorageMap.delete(key);
+  }
+};
+
+// ==============================================================================
 // LOCAL STORAGE DATA ACCESS HELPERS
 // ==============================================================================
 
 export function getStoredUsers(): UserProfile[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_USERS);
+    const raw = safeStorage.getItem(STORAGE_KEY_USERS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
@@ -672,7 +706,7 @@ export function getStoredUsers(): UserProfile[] {
 
 export function saveStoredUsers(users: UserProfile[]) {
   try {
-    localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+    safeStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
   } catch (e) {
     console.error('Failed to save local users', e);
   }
@@ -680,7 +714,7 @@ export function saveStoredUsers(users: UserProfile[]) {
 
 export function getStoredCustomers(): CustomerProfileData[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_CUSTOMERS);
+    const raw = safeStorage.getItem(STORAGE_KEY_CUSTOMERS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -695,7 +729,7 @@ export function getStoredCustomers(): CustomerProfileData[] {
 
 export function saveStoredCustomers(customers: CustomerProfileData[]) {
   try {
-    localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(customers));
+    safeStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(customers));
   } catch (e) {
     console.error('Failed to save local customers', e);
   }
@@ -703,7 +737,7 @@ export function saveStoredCustomers(customers: CustomerProfileData[]) {
 
 export function getStoredBookings(): Booking[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_BOOKINGS);
+    const raw = safeStorage.getItem(STORAGE_KEY_BOOKINGS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -729,7 +763,7 @@ export function getStoredBookings(): Booking[] {
 
 export function saveStoredBookings(bookings: Booking[]) {
   try {
-    localStorage.setItem(STORAGE_KEY_BOOKINGS, JSON.stringify(bookings));
+    safeStorage.setItem(STORAGE_KEY_BOOKINGS, JSON.stringify(bookings));
   } catch (e) {
     console.error('Failed to save local bookings', e);
   }
@@ -737,7 +771,7 @@ export function saveStoredBookings(bookings: Booking[]) {
 
 export function getStoredRoomTypes(): RoomType[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_ROOM_TYPES);
+    const raw = safeStorage.getItem(STORAGE_KEY_ROOM_TYPES);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -758,7 +792,7 @@ export function getStoredRoomTypes(): RoomType[] {
 
 export function saveStoredRoomTypes(rts: RoomType[]) {
   try {
-    localStorage.setItem(STORAGE_KEY_ROOM_TYPES, JSON.stringify(rts));
+    safeStorage.setItem(STORAGE_KEY_ROOM_TYPES, JSON.stringify(rts));
   } catch (e) {
     console.error('Failed to save local room types', e);
   }
@@ -766,7 +800,7 @@ export function saveStoredRoomTypes(rts: RoomType[]) {
 
 export function getStoredRooms(): Room[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_ROOMS);
+    const raw = safeStorage.getItem(STORAGE_KEY_ROOMS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -787,7 +821,7 @@ export function getStoredRooms(): Room[] {
 
 export function saveStoredRooms(rooms: Room[]) {
   try {
-    localStorage.setItem(STORAGE_KEY_ROOMS, JSON.stringify(rooms));
+    safeStorage.setItem(STORAGE_KEY_ROOMS, JSON.stringify(rooms));
   } catch (e) {
     console.error('Failed to save local rooms', e);
   }
@@ -818,7 +852,7 @@ export function deleteLocalFallbackProfile(email: string) {
 
 // Track whether public.users / public.customers table exists on remote Supabase DB
 let remoteTableStatus: 'unknown' | 'ready' | 'missing' = (() => {
-  const saved = localStorage.getItem(STORAGE_KEY_TABLE_STATUS);
+  const saved = safeStorage.getItem(STORAGE_KEY_TABLE_STATUS);
   if (saved === 'ready') return 'ready';
   if (saved === 'missing') return 'missing';
   return 'unknown';
@@ -830,7 +864,7 @@ export function getRemoteTableStatus(): 'unknown' | 'ready' | 'missing' {
 
 export function setRemoteTableStatus(status: 'unknown' | 'ready' | 'missing') {
   remoteTableStatus = status;
-  localStorage.setItem(STORAGE_KEY_TABLE_STATUS, status);
+  safeStorage.setItem(STORAGE_KEY_TABLE_STATUS, status);
 }
 
 // ==============================================================================
@@ -1326,19 +1360,28 @@ export async function fetchCustomerBookingsFromDatabase(customerId: string): Pro
 
   if (isSupabaseConfigured) {
     try {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('customer_id', customerId)
-        .order('created_at', { ascending: false });
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      let query = supabase.from('bookings').select('*');
+      if (uuidRegex.test(customerId)) {
+        query = query.eq('customer_id', customerId);
+      }
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (!error && Array.isArray(data)) {
         setRemoteTableStatus('ready');
         const roomTypes = getStoredRoomTypes();
         const rooms = getStoredRooms();
-        const mapped: Booking[] = data.map((b: any) => {
+        const storedCustomers = getStoredCustomers();
+
+        // If customerId was not a UUID, filter in-memory
+        const filteredData = uuidRegex.test(customerId)
+          ? data
+          : data.filter((b: any) => b.customer_id === customerId);
+
+        const mapped: Booking[] = filteredData.map((b: any) => {
           const rt = roomTypes.find(t => t.id === b.room_type_id);
           const rm = rooms.find(r => r.id === b.room_id);
+          const cust = storedCustomers.find(c => c.id === b.customer_id);
           const calcNights = b.nights || b.number_of_days || b.days || Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24)));
           const calcGuests = b.guests || b.number_of_guests || 1;
           const calcAdr = b.adr ? Number(b.adr) : Math.round(Number(b.total_amount) / calcNights);
@@ -1347,27 +1390,27 @@ export async function fetchCustomerBookingsFromDatabase(customerId: string): Pro
             id: b.booking_reference || b.id,
             bookingReference: b.booking_reference,
             customerId: b.customer_id,
-            customerCode: 'CUS-GUEST',
+            customerCode: cust?.customer_code || 'CUS-GUEST',
             roomTypeId: b.room_type_id,
             roomTypeName: b.room_type_name || rt?.name || 'Selected Suite',
             roomId: b.room_id,
             roomNumber: b.room_number || rm?.roomNumber || 'Assigned at Check-In',
-            customerName: b.customer_name || 'Guest',
-            customerEmail: b.customer_email || '',
-            customerPhone: b.customer_phone || '',
-            customerAge: b.customer_age || b.age,
-            customerGender: b.customer_gender || b.gender,
-            customerAddress: b.customer_address || b.address,
-            customerCity: b.customer_city || b.city,
-            customerState: b.customer_state || b.state,
-            customerCountry: b.customer_country || b.country,
-            customerPostalCode: b.customer_postal_code || b.postal_code,
-            aadharNumber: b.aadhar_number || b.customer_aadhar,
-            idProofType: b.id_proof_type || 'Aadhar Card',
-            idProofNumber: b.id_proof_number || b.aadhar_number,
+            customerName: b.customer_name || cust?.full_name || 'Guest',
+            customerEmail: b.customer_email || cust?.email || '',
+            customerPhone: b.customer_phone || cust?.phone || '',
+            customerAge: b.customer_age || b.age || cust?.age,
+            customerGender: b.customer_gender || b.gender || cust?.gender,
+            customerAddress: b.customer_address || b.address || cust?.address_line,
+            customerCity: b.customer_city || b.city || cust?.city,
+            customerState: b.customer_state || b.state || cust?.state,
+            customerCountry: b.customer_country || b.country || cust?.country,
+            customerPostalCode: b.customer_postal_code || b.postal_code || cust?.postal_code,
+            aadharNumber: b.aadhar_number || b.customer_aadhar || cust?.aadhar_number,
+            idProofType: b.id_proof_type || cust?.id_proof_type || 'Aadhar Card',
+            idProofNumber: b.id_proof_number || b.aadhar_number || cust?.id_proof_number,
             purposeOfVisit: b.purpose_of_visit || 'Leisure / Holiday',
-            emergencyContactName: b.emergency_contact_name,
-            emergencyContactPhone: b.emergency_contact_phone,
+            emergencyContactName: b.emergency_contact_name || cust?.emergency_contact_name,
+            emergencyContactPhone: b.emergency_contact_phone || cust?.emergency_contact_phone,
             checkIn: b.check_in,
             checkOut: b.check_out,
             nights: calcNights,
@@ -1386,7 +1429,12 @@ export async function fetchCustomerBookingsFromDatabase(customerId: string): Pro
             marketSegment: 'Direct',
             depositType: 'Refundable',
             createdAt: b.created_at ? b.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-            specialRequests: b.special_requests || ''
+            specialRequests: b.special_requests || '',
+            refundAmount: b.refund_amount ? Number(b.refund_amount) : undefined,
+            cancellationFee: b.cancellation_fee ? Number(b.cancellation_fee) : undefined,
+            cancellationReason: b.cancellation_reason || undefined,
+            refundPercentage: b.refund_percentage ? Number(b.refund_percentage) : undefined,
+            cancelledAt: b.cancelled_at || (b.booking_status === 'Cancelled' ? b.updated_at : undefined)
           };
         });
 
@@ -1474,7 +1522,12 @@ export async function fetchAllBookingsFromDatabase(): Promise<Booking[]> {
             marketSegment: 'Direct',
             depositType: 'Refundable',
             createdAt: b.created_at ? b.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
-            specialRequests: b.special_requests || ''
+            specialRequests: b.special_requests || '',
+            refundAmount: b.refund_amount ? Number(b.refund_amount) : undefined,
+            cancellationFee: b.cancellation_fee ? Number(b.cancellation_fee) : undefined,
+            cancellationReason: b.cancellation_reason || undefined,
+            refundPercentage: b.refund_percentage ? Number(b.refund_percentage) : undefined,
+            cancelledAt: b.cancelled_at || (b.booking_status === 'Cancelled' ? b.updated_at : undefined)
           };
         });
 
@@ -2231,8 +2284,9 @@ export async function cancelBookingInDatabase(
   if (!bookingId) return { success: false, error: 'Booking identifier is required.' };
 
   const cancelledTimestamp = new Date().toISOString();
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  // 1. Update local storage
+  // 1. Update local storage immediately for responsive UI
   const allBookings = getStoredBookings();
   const target = allBookings.find(b => b.id === bookingId || b.bookingReference === bookingId);
   if (target) {
@@ -2248,50 +2302,132 @@ export async function cancelBookingInDatabase(
     saveStoredBookings(allBookings);
   }
 
-  // 2. Update Supabase
+  // 2. Update Supabase public.bookings table
   if (isSupabaseConfigured) {
     try {
-      const updatePayload: any = {
+      const isUuid = uuidRegex.test(bookingId);
+      const bookingRefToUse = target?.bookingReference || (bookingId.startsWith('BKG-') || !isUuid ? bookingId : '');
+      const bookingUuidToUse = isUuid ? bookingId : (target?.id && uuidRegex.test(target.id) ? target.id : '');
+
+      let updateSucceeded = false;
+
+      // Primary payload for Supabase bookings table
+      const primaryPayload: Record<string, any> = {
         booking_status: 'Cancelled',
         payment_status: 'Refunded',
         updated_at: cancelledTimestamp
       };
+
       if (refundDetails?.refundAmount !== undefined) {
-        updatePayload.refund_amount = refundDetails.refundAmount;
+        primaryPayload.refund_amount = refundDetails.refundAmount;
       }
       if (refundDetails?.cancellationReason) {
-        updatePayload.cancellation_reason = refundDetails.cancellationReason;
+        primaryPayload.cancellation_reason = refundDetails.cancellationReason;
       }
+      if (refundDetails?.cancellationFee !== undefined) {
+        primaryPayload.cancellation_fee = refundDetails.cancellationFee;
+      }
+      if (refundDetails?.refundPercentage !== undefined) {
+        primaryPayload.refund_percentage = refundDetails.refundPercentage;
+      }
+      primaryPayload.cancelled_at = cancelledTimestamp;
 
-      let query = supabase.from('bookings').update(updatePayload);
-      if (target?.bookingReference) {
-        query = query.eq('booking_reference', target.bookingReference);
-      } else {
-        query = query.eq('id', bookingId);
-      }
-      if (customerId) {
-        query = query.eq('customer_id', customerId);
-      }
-      const { error } = await query;
-      if (error) {
-        // Fallback for missing optional columns
-        if (error.code === '42703') {
-          let fallbackQuery = supabase
+      // Strategy A: Update by booking_reference (text column, safe against 22P02 uuid format errors)
+      if (bookingRefToUse) {
+        const { data, error } = await supabase
+          .from('bookings')
+          .update(primaryPayload)
+          .eq('booking_reference', bookingRefToUse)
+          .select('id, booking_reference, booking_status');
+
+        if (!error && Array.isArray(data) && data.length > 0) {
+          updateSucceeded = true;
+          console.log(`Supabase booking ${bookingRefToUse} cancelled with full payload.`);
+        } else if (error) {
+          // If error is 42703 (missing optional column) or check constraint on payment_status, retry with core fields
+          const { data: coreData, error: coreErr } = await supabase
             .from('bookings')
-            .update({ booking_status: 'Cancelled', payment_status: 'Refunded', updated_at: cancelledTimestamp });
-          if (target?.bookingReference) {
-            fallbackQuery = fallbackQuery.eq('booking_reference', target.bookingReference);
+            .update({
+              booking_status: 'Cancelled',
+              payment_status: 'Refunded',
+              updated_at: cancelledTimestamp
+            })
+            .eq('booking_reference', bookingRefToUse)
+            .select('id, booking_reference, booking_status');
+
+          if (!coreErr && Array.isArray(coreData) && coreData.length > 0) {
+            updateSucceeded = true;
+            console.log(`Supabase booking ${bookingRefToUse} cancelled with core payload.`);
           } else {
-            fallbackQuery = fallbackQuery.eq('id', bookingId);
+            // Absolute fallback: update only booking_status and updated_at
+            const { data: minData, error: minErr } = await supabase
+              .from('bookings')
+              .update({
+                booking_status: 'Cancelled',
+                updated_at: cancelledTimestamp
+              })
+              .eq('booking_reference', bookingRefToUse)
+              .select('id, booking_reference, booking_status');
+
+            if (!minErr && Array.isArray(minData) && minData.length > 0) {
+              updateSucceeded = true;
+            }
           }
-          await fallbackQuery;
-        } else {
-          console.warn('Supabase cancellation notice:', error.message);
         }
       }
+
+      // Strategy B: If not updated by reference and bookingUuid is a valid UUID, update by id = UUID
+      if (!updateSucceeded && bookingUuidToUse) {
+        const { data, error } = await supabase
+          .from('bookings')
+          .update(primaryPayload)
+          .eq('id', bookingUuidToUse)
+          .select('id, booking_reference, booking_status');
+
+        if (!error && Array.isArray(data) && data.length > 0) {
+          updateSucceeded = true;
+          console.log(`Supabase booking UUID ${bookingUuidToUse} cancelled.`);
+        } else {
+          const { data: minData } = await supabase
+            .from('bookings')
+            .update({
+              booking_status: 'Cancelled',
+              updated_at: cancelledTimestamp
+            })
+            .eq('id', bookingUuidToUse)
+            .select('id, booking_reference, booking_status');
+
+          if (Array.isArray(minData) && minData.length > 0) {
+            updateSucceeded = true;
+          }
+        }
+      }
+
+      // Strategy C: Case-insensitive match if still not updated
+      if (!updateSucceeded && bookingRefToUse) {
+        const { data: matchData } = await supabase
+          .from('bookings')
+          .select('id, booking_reference')
+          .ilike('booking_reference', bookingRefToUse)
+          .limit(1);
+
+        if (Array.isArray(matchData) && matchData.length > 0) {
+          const matchedId = matchData[0].id;
+          await supabase
+            .from('bookings')
+            .update({
+              booking_status: 'Cancelled',
+              payment_status: 'Refunded',
+              updated_at: cancelledTimestamp
+            })
+            .eq('id', matchedId);
+          updateSucceeded = true;
+        }
+      }
+
       setRemoteTableStatus('ready');
     } catch (e: any) {
-      console.warn('Supabase cancellation error:', e?.message);
+      console.warn('Supabase cancellation notice:', e?.message || e);
     }
   }
 

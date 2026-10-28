@@ -121,6 +121,9 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
   // Clean empty input fields every time the modal is opened (no previous person's details)
   useEffect(() => {
     if (isOpen) {
+      if (defaultCheckIn) setCheckIn(defaultCheckIn);
+      if (defaultCheckOut) setCheckOut(defaultCheckOut);
+      if (defaultGuests) setGuests(defaultGuests);
       setFullName('');
       setPhone('');
       setEmail('');
@@ -154,7 +157,7 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
       // Pre-load Razorpay checkout script
       loadRazorpayScript();
     }
-  }, [isOpen]);
+  }, [isOpen, defaultCheckIn, defaultCheckOut, defaultGuests]);
 
   // Execute OCR address extraction for uploaded identity document
   const triggerOcrForFile = async (dataUrl: string, mime: string, currentDocType: string) => {

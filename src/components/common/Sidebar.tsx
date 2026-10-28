@@ -86,7 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: 'home', label: 'Home', icon: Hotel },
       { id: 'search-rooms', label: 'Search Rooms', icon: Search },
       { id: 'my-bookings', label: 'My Bookings', icon: CalendarCheck },
-      { id: 'ai-assistant', label: 'AI Assistant', icon: MessageSquareCode, badge: 'Active', badgeColor: 'bg-emerald-500' },
+      { id: 'ai-assistant', label: 'Aura Concierge', icon: Sparkles, badge: 'Voice', badgeColor: 'bg-emerald-500' },
       { id: 'profile', label: 'Profile', icon: User }
     ];
   };

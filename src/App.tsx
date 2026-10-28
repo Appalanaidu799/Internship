@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { HotelProvider } from './context/HotelContext';
+import { HotelProvider, useHotel } from './context/HotelContext';
+import { RoomType } from './types/hotel';
 import { LoginPage } from './components/auth/LoginPage';
 import { RegisterPage } from './components/auth/RegisterPage';
 import { AdminSetupPage } from './components/auth/AdminSetupPage';
@@ -8,6 +9,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { Sidebar } from './components/common/Sidebar';
 import { Header } from './components/common/Header';
 import { SupabaseDbBanner } from './components/common/SupabaseDbBanner';
+import { RoleBasedAiChatbot } from './components/common/RoleBasedAiChatbot';
 
 // Admin Views
 import { AdminDashboardOverview } from './components/admin/AdminDashboardOverview';
@@ -32,13 +34,14 @@ import { ManagementCustomers } from './components/management/ManagementCustomers
 
 // Customer Views
 import { CustomerHome } from './components/customer/CustomerHome';
-import { CustomerSearchRooms } from './components/customer/CustomerSearchRooms';
+import { CustomerSearchRooms, BookingPrefillData } from './components/customer/CustomerSearchRooms';
 import { CustomerMyBookings } from './components/customer/CustomerMyBookings';
 import { CustomerAiAssistant } from './components/customer/CustomerAiAssistant';
 import { CustomerProfile } from './components/customer/CustomerProfile';
 
 const AppContent: React.FC = () => {
   const { user, role, isAuthenticated, isLoading, isAdminConfigured, setIsAdminConfigured } = useAuth();
+  const { roomTypes } = useHotel();
   const [authView, setAuthView] = useState<'login' | 'register' | 'admin-setup'>('login');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
@@ -46,6 +49,9 @@ const AppContent: React.FC = () => {
   const [adminTab, setAdminTab] = useState('dashboard');
   const [mgmtTab, setMgmtTab] = useState('dashboard');
   const [custTab, setCustTab] = useState('home');
+
+  // Automated voice-booking prefill state
+  const [bookingPrefill, setBookingPrefill] = useState<BookingPrefillData | null>(null);
 
   // Enforce route protection and redirect unauthorized attempts to the user's own dashboard
   const enforceRouteProtection = useCallback(() => {
@@ -260,11 +266,30 @@ const AppContent: React.FC = () => {
             case 'home':
               return <CustomerHome onNavigateTab={setCustTab} />;
             case 'search-rooms':
-              return <CustomerSearchRooms />;
+              return (
+                <CustomerSearchRooms
+                  initialBookingPrefill={bookingPrefill}
+                  onClearBookingPrefill={() => setBookingPrefill(null)}
+                />
+              );
             case 'my-bookings':
               return <CustomerMyBookings />;
             case 'ai-assistant':
-              return <CustomerAiAssistant />;
+              return (
+                <CustomerAiAssistant
+                  onNavigateTab={setCustTab}
+                  onTriggerBookingPrefill={(data) => {
+                    const targetRoom = roomTypes.find(r => r.id === data.roomTypeId) || roomTypes[0];
+                    setBookingPrefill({
+                      roomType: targetRoom,
+                      checkIn: data.checkIn,
+                      checkOut: data.checkOut,
+                      guests: data.guests
+                    });
+                    setCustTab('search-rooms');
+                  }}
+                />
+              );
             case 'profile':
               return <CustomerProfile />;
             default:
@@ -300,6 +325,42 @@ const AppContent: React.FC = () => {
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
           {renderContent()}
         </main>
+
+        {/* Role-Based Floating AI Chatbot with Supabase RAG Knowledge & Voice Booking Automation */}
+        {isAuthenticated && (
+          <RoleBasedAiChatbot
+            onNavigateTab={tab => {
+              if (role === 'customer') setCustTab(tab);
+              else if (role === 'management') setMgmtTab(tab);
+              else if (role === 'admin') setAdminTab(tab);
+            }}
+            onSelectRoomForBooking={roomTypeId => {
+              const targetRoom = roomTypes.find(r => r.id === roomTypeId) || roomTypes[0];
+              setBookingPrefill({
+                roomType: targetRoom,
+                checkIn: new Date().toISOString().split('T')[0],
+                checkOut: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+                guests: 2
+              });
+              setCustTab('search-rooms');
+            }}
+            onTriggerBookingPrefill={data => {
+              const targetRoom = roomTypes.find(
+                r => r.id === data.roomTypeId ||
+                     r.name.toLowerCase() === data.roomTypeId.toLowerCase() ||
+                     r.name.toLowerCase().includes(data.roomTypeId.toLowerCase()) ||
+                     r.code.toLowerCase() === data.roomTypeId.toLowerCase()
+              ) || roomTypes[0];
+              setBookingPrefill({
+                roomType: targetRoom,
+                checkIn: data.checkIn,
+                checkOut: data.checkOut,
+                guests: data.guests
+              });
+              setCustTab('search-rooms');
+            }}
+          />
+        )}
 
         {/* Quiet Clean Footer */}
         <footer className="px-6 py-4 border-t border-slate-200/80 bg-white text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2">

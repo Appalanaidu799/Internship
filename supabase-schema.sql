@@ -228,6 +228,11 @@ ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS id_document_name text;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS id_document_data text;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS ocr_status text;
 ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS payment_verified_at timestamptz;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS refund_amount numeric(10,2);
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS cancellation_fee numeric(10,2);
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS cancellation_reason text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS refund_percentage integer;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
 
 -- Safe dynamic backfill of legacy bookings using EXECUTE (prevents PostgreSQL 42703 & 42P01 errors)
 DO $$

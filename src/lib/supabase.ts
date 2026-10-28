@@ -432,43 +432,6 @@ EXCEPTION WHEN OTHERS THEN
 END $$;
 `;
 
-// Seed users for offline fallback and seamless testing across Admin, Management, and Customer roles
-export const SEED_USERS: UserProfile[] = [
-  {
-    id: '8ef2e174-d93f-4961-8259-94ce37e202a8',
-    full_name: 'Appala Naidu',
-    email: 'appalanaidu.dev@gmail.com',
-    phone: '+91 99000 11223',
-    role: 'admin',
-    status: 'active',
-    profile_image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-    created_at: '2025-01-01T00:00:00.000Z',
-    updated_at: '2025-01-01T00:00:00.000Z'
-  },
-  {
-    id: 'm-4',
-    full_name: 'Deepa Rao',
-    email: 'manager@naiduhotel.com',
-    phone: '+91 98765 43210',
-    role: 'management',
-    status: 'active',
-    profile_image: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&auto=format&fit=crop&q=80',
-    created_at: '2025-05-01T00:00:00.000Z',
-    updated_at: '2025-05-01T00:00:00.000Z'
-  },
-  {
-    id: 'c0000000-0000-0000-0000-000000000003',
-    full_name: 'Rajesh Naidu',
-    email: 'customer@gmail.com',
-    phone: '+1 (555) 234-5678',
-    role: 'customer',
-    status: 'active',
-    profile_image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80',
-    created_at: '2025-01-10T08:00:00.000Z',
-    updated_at: '2025-01-10T08:00:00.000Z'
-  }
-];
-
 // Local Storage Keys
 export const STORAGE_KEY_USERS = 'naidu_supabase_users_table';
 export const STORAGE_KEY_CUSTOMERS = 'naidu_supabase_customers_table';
@@ -697,24 +660,14 @@ export function getStoredUsers(): UserProfile[] {
     const raw = localStorage.getItem(STORAGE_KEY_USERS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const existingEmails = new Set(parsed.map((u: any) => u.email?.toLowerCase()));
-        let added = false;
-        SEED_USERS.forEach(su => {
-          if (!existingEmails.has(su.email.toLowerCase())) {
-            parsed.push(su);
-            added = true;
-          }
-        });
-        if (added) saveStoredUsers(parsed);
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
   } catch (e) {
     console.error('Failed to parse local users', e);
   }
-  saveStoredUsers(SEED_USERS);
-  return SEED_USERS;
+  return [];
 }
 
 export function saveStoredUsers(users: UserProfile[]) {
@@ -1288,10 +1241,20 @@ export async function syncCustomerProfileToDatabase(
     date_of_birth: profileUpdate.date_of_birth !== undefined ? profileUpdate.date_of_birth : current.date_of_birth,
     gender: profileUpdate.gender !== undefined ? profileUpdate.gender : current.gender,
     address_line: profileUpdate.address_line !== undefined ? profileUpdate.address_line.trim() : current.address_line,
+    address_line2: profileUpdate.address_line2 !== undefined ? profileUpdate.address_line2.trim() : current.address_line2,
     city: profileUpdate.city !== undefined ? profileUpdate.city.trim() : current.city,
     state: profileUpdate.state !== undefined ? profileUpdate.state.trim() : current.state,
     postal_code: profileUpdate.postal_code !== undefined ? profileUpdate.postal_code.trim() : current.postal_code,
-    country: profileUpdate.country !== undefined ? profileUpdate.country.trim() : current.country,
+    country: profileUpdate.country !== undefined ? profileUpdate.country.trim() : (current.country || 'India'),
+    id_proof_type: profileUpdate.id_proof_type !== undefined ? profileUpdate.id_proof_type : (current.id_proof_type || 'Aadhar Card'),
+    id_proof_number: profileUpdate.id_proof_number !== undefined ? profileUpdate.id_proof_number : current.id_proof_number,
+    aadhar_number: profileUpdate.aadhar_number !== undefined ? profileUpdate.aadhar_number : (profileUpdate.id_proof_number || current.aadhar_number),
+    id_document_name: profileUpdate.id_document_name !== undefined ? profileUpdate.id_document_name : current.id_document_name,
+    id_document_size: profileUpdate.id_document_size !== undefined ? profileUpdate.id_document_size : current.id_document_size,
+    id_document_preview: profileUpdate.id_document_preview !== undefined ? profileUpdate.id_document_preview : current.id_document_preview,
+    ocr_status: profileUpdate.ocr_status !== undefined ? profileUpdate.ocr_status : current.ocr_status,
+    ocr_extracted_at: profileUpdate.ocr_extracted_at !== undefined ? profileUpdate.ocr_extracted_at : current.ocr_extracted_at,
+    ocr_verified_by_user: profileUpdate.ocr_verified_by_user !== undefined ? profileUpdate.ocr_verified_by_user : current.ocr_verified_by_user,
     emergency_contact_name: profileUpdate.emergency_contact_name !== undefined ? profileUpdate.emergency_contact_name.trim() : current.emergency_contact_name,
     emergency_contact_phone: profileUpdate.emergency_contact_phone !== undefined ? profileUpdate.emergency_contact_phone.trim() : current.emergency_contact_phone,
     updated_at: new Date().toISOString()

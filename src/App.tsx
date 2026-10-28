@@ -27,6 +27,7 @@ import { ManagementCancellationPrediction } from './components/management/Manage
 import { ManagementOccupancy } from './components/management/ManagementOccupancy';
 import { ManagementRevenueAdr } from './components/management/ManagementRevenueAdr';
 import { ManagementBookings } from './components/management/ManagementBookings';
+import { ManagementRooms } from './components/management/ManagementRooms';
 import { ManagementCustomers } from './components/management/ManagementCustomers';
 
 // Customer Views
@@ -155,7 +156,7 @@ const AppContent: React.FC = () => {
         'cancellation-prediction': 'Cancellation Prediction Hub',
         analytics: 'Performance Analytics',
         'ai-insights': 'AI Business Insights',
-        'management-users': 'Management Users Roster',
+        'management-users': 'User Directory & Access Control',
         settings: 'System & Hotel Settings'
       };
       return titles[adminTab] || 'Admin Dashboard';
@@ -165,6 +166,7 @@ const AppContent: React.FC = () => {
       const titles: Record<string, string> = {
         dashboard: 'Management Operations',
         bookings: 'Operations Bookings',
+        rooms: 'Manage Physical Rooms',
         'cancellation-prediction': 'Cancellation Forecasting',
         occupancy: 'Occupancy Dispatch',
         'revenue-adr': 'Revenue & ADR Optimization',
@@ -230,6 +232,8 @@ const AppContent: React.FC = () => {
                 return <ManagementDashboardOverview onNavigateTab={setMgmtTab} />;
               case 'bookings':
                 return <ManagementBookings />;
+              case 'rooms':
+                return <ManagementRooms />;
               case 'cancellation-prediction':
                 return <ManagementCancellationPrediction />;
               case 'occupancy':

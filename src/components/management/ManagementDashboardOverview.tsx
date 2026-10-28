@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Building,
   CalendarCheck,
@@ -9,14 +9,14 @@ import {
   Sparkles,
   ShieldAlert,
   ChevronRight,
-  BedDouble
+  BedDouble,
+  CreditCard
 } from 'lucide-react';
 import { KpiCard } from '../common/KpiCard';
 import { ChartCard, TrendLineChart, RiskDonutChart, HorizontalBarChart } from '../common/ChartCard';
 import { RiskBadge } from '../common/RiskBadge';
 import { StatusBadge } from '../common/StatusBadge';
 import { useHotel } from '../../context/HotelContext';
-import { ANALYTICS_DATA } from '../../data/mockData';
 
 interface ManagementDashboardOverviewProps {
   onNavigateTab: (tabId: string) => void;
@@ -25,21 +25,62 @@ interface ManagementDashboardOverviewProps {
 export const ManagementDashboardOverview: React.FC<ManagementDashboardOverviewProps> = ({
   onNavigateTab
 }) => {
-  const { bookings, rooms, insights } = useHotel();
+  const { bookings, rooms, roomTypes, insights } = useHotel();
 
   // Management calculations
   const totalBookings = bookings.length;
   const cancelledBookings = bookings.filter(b => b.status === 'Cancelled').length;
   const occupiedRooms = rooms.filter(r => r.status === 'Occupied').length;
   const totalRooms = rooms.length;
-  const occupancyRate = ((occupiedRooms / (totalRooms || 1)) * 100).toFixed(1);
-  const cancellationRate = ((cancelledBookings / (totalBookings || 1)) * 100).toFixed(1);
-  const avgAdr = Math.round(bookings.reduce((sum, b) => sum + b.adr, 0) / (totalBookings || 1));
+  const occupancyRate = totalRooms > 0 ? ((occupiedRooms / totalRooms) * 100).toFixed(1) : '0.0';
+  const cancellationRate = totalBookings > 0 ? ((cancelledBookings / totalBookings) * 100).toFixed(1) : '0.0';
+  const avgAdr = totalBookings > 0 ? Math.round(bookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookings) : 0;
+
+  const actualCollectedRevenue = bookings
+    .filter(b => b.paymentStatus === 'Paid' && b.status !== 'Cancelled')
+    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+  const pendingRevenue = bookings
+    .filter(b => b.paymentStatus === 'Pending' && b.status !== 'Cancelled')
+    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
   const highRiskBookings = bookings.filter(b => b.cancellationRisk === 'HIGH');
   const mediumRiskBookings = bookings.filter(b => b.cancellationRisk === 'MEDIUM');
   const lowRiskBookings = bookings.filter(b => b.cancellationRisk === 'LOW');
   const predictedCancellations = highRiskBookings.length + Math.round(mediumRiskBookings.length * 0.4);
+
+  // Dynamic monthly trend
+  const monthlyTrends = useMemo(() => {
+    if (bookings.length === 0) return [];
+    const map = new Map<string, { bookings: number; cancellations: number }>();
+    bookings.forEach(b => {
+      const d = new Date(b.checkIn || b.createdAt);
+      const label = !isNaN(d.getTime()) ? d.toLocaleString('en-US', { month: 'short' }) : 'Active';
+      const curr = map.get(label) || { bookings: 0, cancellations: 0 };
+      curr.bookings += 1;
+      if (b.status === 'Cancelled') curr.cancellations += 1;
+      map.set(label, curr);
+    });
+    return Array.from(map.entries()).map(([label, val]) => ({
+      label,
+      primary: val.bookings,
+      secondary: val.cancellations
+    }));
+  }, [bookings]);
+
+  // Dynamic room type cancellation stats
+  const roomTypeCxlStats = useMemo(() => {
+    return roomTypes.slice(0, 4).map(rt => {
+      const matched = bookings.filter(b => b.roomTypeId === rt.id || b.roomTypeName === rt.name);
+      const cancelled = matched.filter(b => b.status === 'Cancelled').length;
+      const rate = matched.length > 0 ? `${Math.round((cancelled / matched.length) * 100)}%` : '0%';
+      return {
+        label: rt.name,
+        value: cancelled,
+        rate: `${cancelled} cxl (${rate})`,
+        color: 'bg-rose-500'
+      };
+    });
+  }, [roomTypes, bookings]);
 
   return (
     <div className="space-y-6">
@@ -50,7 +91,7 @@ export const ManagementDashboardOverview: React.FC<ManagementDashboardOverviewPr
             Hotel Operations & Revenue Management
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Operational cockpit: Daily occupancy pacing, yield per key, and machine-learning risk intelligence.
+            Operational cockpit: Daily occupancy pacing, physical key dispatch, and machine-learning risk monitoring.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -59,58 +100,42 @@ export const ManagementDashboardOverview: React.FC<ManagementDashboardOverviewPr
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold transition-colors"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>AI Revenue Suggestions</span>
+            <span>AI Operational Suggestions</span>
           </button>
         </div>
       </div>
 
-      {/* Management KPI Cards (Exact requested set):
-          - Occupancy Rate
-          - Total Bookings
-          - Cancellation Rate
-          - Cancelled Bookings
-          - Average ADR
-      */}
+      {/* Management KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <KpiCard
           title="Occupancy Rate"
           value={`${occupancyRate}%`}
-          change="+4.2%"
-          trend="up"
           subtext={`${occupiedRooms} of ${totalRooms} rooms occupied`}
           icon={<Building className="w-5 h-5 text-blue-600" />}
         />
         <KpiCard
           title="Total Bookings"
           value={totalBookings.toLocaleString()}
-          change="+12.4%"
-          trend="up"
-          subtext="total folio volume"
+          subtext="total active folios"
           icon={<CalendarCheck className="w-5 h-5 text-indigo-600" />}
         />
         <KpiCard
-          title="Cancellation Rate"
-          value={`${cancellationRate}%`}
-          change="-2.3%"
-          trend="down"
-          subtext="vs 21.5% target"
-          icon={<Percent className="w-5 h-5 text-amber-600" />}
+          title="Collected Revenue"
+          value={`₹${actualCollectedRevenue.toLocaleString('en-IN')}`}
+          subtext={`Pending: ₹${pendingRevenue.toLocaleString('en-IN')}`}
+          icon={<CreditCard className="w-5 h-5 text-emerald-600" />}
         />
         <KpiCard
           title="Cancelled Bookings"
           value={cancelledBookings}
-          change="-4.2%"
-          trend="down"
-          subtext="released inventory"
+          subtext={`Cancellation rate: ${cancellationRate}%`}
           icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
         />
         <KpiCard
           title="Average ADR"
           value={`₹${avgAdr.toLocaleString('en-IN')}`}
-          change="+6.8%"
-          trend="up"
-          subtext="average daily rate"
-          icon={<DollarSign className="w-5 h-5 text-emerald-600" />}
+          subtext="average daily room rate"
+          icon={<DollarSign className="w-5 h-5 text-amber-600" />}
         />
       </div>
 
@@ -166,31 +191,36 @@ export const ManagementDashboardOverview: React.FC<ManagementDashboardOverviewPr
               Cancellation Rate Trend (Monthly)
             </h4>
             <div className="h-44 w-full">
-              <TrendLineChart
-                data={ANALYTICS_DATA.monthlyTrends.map(m => ({
-                  label: m.month,
-                  primary: m.bookings,
-                  secondary: m.cancellations
-                }))}
-                primaryLabel="Bookings"
-                secondaryLabel="Cancellations"
-                height={160}
-              />
+              {monthlyTrends.length > 0 ? (
+                <TrendLineChart
+                  data={monthlyTrends}
+                  primaryLabel="Bookings"
+                  secondaryLabel="Cancellations"
+                  height={160}
+                />
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-4 border border-dashed border-slate-200 rounded-lg">
+                  <CalendarCheck className="w-6 h-6 text-slate-300 mb-1" />
+                  <p className="text-xs font-medium text-slate-600">No Booking History in Database</p>
+                  <p className="text-[11px] text-slate-400">Monthly operational trends will plot here as reservations arrive.</p>
+                </div>
+              )}
             </div>
           </div>
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
               Cancellation by Room Type
             </h4>
-            <HorizontalBarChart
-              items={ANALYTICS_DATA.cancellationByRoomType.slice(0, 4).map(r => ({
-                label: r.roomType,
-                value: r.cancelled,
-                rate: r.rate,
-                color: 'bg-rose-500'
-              }))}
-              valueSuffix=" cxl"
-            />
+            {roomTypeCxlStats.length > 0 ? (
+              <HorizontalBarChart
+                items={roomTypeCxlStats}
+                valueSuffix=" cxl"
+              />
+            ) : (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                No room types in database.
+              </div>
+            )}
           </div>
         </div>
       </div>

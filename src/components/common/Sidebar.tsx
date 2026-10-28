@@ -57,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         { id: 'analytics', label: 'Analytics', icon: LineChart },
         { id: 'ai-insights', label: 'AI Insights', icon: Sparkles, badge: 'New', badgeColor: 'bg-blue-500' },
-        { id: 'management-users', label: 'Management Users', icon: UserCheck },
+        { id: 'management-users', label: 'User Directory & Access', icon: UserCheck },
         { id: 'settings', label: 'Settings', icon: Settings }
       ];
     }
@@ -66,6 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'bookings', label: 'Bookings', icon: CalendarCheck },
+        { id: 'rooms', label: 'Manage Rooms', icon: Building },
         {
           id: 'cancellation-prediction',
           label: 'Cancellation Prediction',
@@ -73,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           badge: highRiskCount > 0 ? `${highRiskCount} Risk` : undefined,
           badgeColor: 'bg-rose-500'
         },
-        { id: 'occupancy', label: 'Occupancy', icon: Building },
+        { id: 'occupancy', label: 'Occupancy', icon: BedDouble },
         { id: 'revenue-adr', label: 'Revenue & ADR', icon: Percent },
         { id: 'customers', label: 'Customers', icon: Users },
         { id: 'ai-insights', label: 'AI Insights', icon: Sparkles, badge: 'New', badgeColor: 'bg-blue-500' }

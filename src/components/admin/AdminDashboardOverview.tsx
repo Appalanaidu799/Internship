@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   CalendarCheck,
   Users,
@@ -10,14 +10,16 @@ import {
   TrendingUp,
   ShieldAlert,
   ChevronRight,
-  Filter
+  Filter,
+  CreditCard,
+  Building,
+  CheckCircle2
 } from 'lucide-react';
 import { KpiCard } from '../common/KpiCard';
 import { ChartCard, TrendLineChart, RiskDonutChart, HorizontalBarChart } from '../common/ChartCard';
 import { RiskBadge } from '../common/RiskBadge';
 import { StatusBadge } from '../common/StatusBadge';
 import { useHotel } from '../../context/HotelContext';
-import { ANALYTICS_DATA } from '../../data/mockData';
 
 interface AdminDashboardOverviewProps {
   onNavigateTab: (tabId: string) => void;
@@ -28,14 +30,26 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
   onNavigateTab,
   onSelectBooking
 }) => {
-  const { bookings, customers, rooms, insights } = useHotel();
+  const { bookings, customers, rooms, roomTypes, insights } = useHotel();
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
   // KPI Calculations from active data
   const totalBookingsCount = bookings.length;
+  const confirmedCount = bookings.filter(b => b.status === 'Confirmed' || b.status === 'Checked-In').length;
   const cancelledCount = bookings.filter(b => b.status === 'Cancelled').length;
-  const cancellationRate = ((cancelledCount / (totalBookingsCount || 1)) * 100).toFixed(1);
-  const avgAdr = Math.round(bookings.reduce((sum, b) => sum + b.adr, 0) / (totalBookingsCount || 1));
+  const cancellationRate = totalBookingsCount > 0 ? ((cancelledCount / totalBookingsCount) * 100).toFixed(1) : '0.0';
+  const avgAdr = totalBookingsCount > 0 ? Math.round(bookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookingsCount) : 0;
+
+  // Real collected revenue vs pending
+  const actualCollectedRevenue = bookings
+    .filter(b => b.paymentStatus === 'Paid' && b.status !== 'Cancelled')
+    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+  const pendingRevenue = bookings
+    .filter(b => b.paymentStatus === 'Pending' && b.status !== 'Cancelled')
+    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+
+  const availableRoomsCount = rooms.filter(r => r.status === 'Available').length;
+  const totalRoomsCount = rooms.length;
 
   // High risk bookings specifically for the prediction section
   const highRiskBookings = bookings.filter(b => b.cancellationRisk === 'HIGH');
@@ -47,6 +61,61 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
     if (selectedRiskFilter === 'MEDIUM') return b.cancellationRisk === 'MEDIUM';
     return b.cancellationRisk === 'HIGH' || b.cancellationRisk === 'MEDIUM';
   });
+
+  // Dynamically compute monthly trends from real bookings
+  const monthlyTrends = useMemo(() => {
+    if (bookings.length === 0) return [];
+    const map = new Map<string, { bookings: number; cancellations: number }>();
+    bookings.forEach(b => {
+      const d = new Date(b.checkIn || b.createdAt);
+      const label = !isNaN(d.getTime())
+        ? d.toLocaleString('en-US', { month: 'short' })
+        : 'Active';
+      const curr = map.get(label) || { bookings: 0, cancellations: 0 };
+      curr.bookings += 1;
+      if (b.status === 'Cancelled') curr.cancellations += 1;
+      map.set(label, curr);
+    });
+    return Array.from(map.entries()).map(([label, val]) => ({
+      label,
+      primary: val.bookings,
+      secondary: val.cancellations
+    }));
+  }, [bookings]);
+
+  // Dynamically compute cancellation breakdown by room type from real database records
+  const roomTypeBreakdown = useMemo(() => {
+    return roomTypes.map(rt => {
+      const matched = bookings.filter(b => b.roomTypeId === rt.id || b.roomTypeName === rt.name);
+      const total = matched.length;
+      const cancelled = matched.filter(b => b.status === 'Cancelled').length;
+      return {
+        label: rt.name,
+        value: total,
+        rate: `${cancelled} cxl (${total > 0 ? Math.round((cancelled / total) * 100) : 0}%)`,
+        color: 'bg-indigo-600'
+      };
+    });
+  }, [roomTypes, bookings]);
+
+  // Dynamically compute lead time breakdown from real database records
+  const leadTimeBreakdown = useMemo(() => {
+    const buckets = [
+      { label: '< 7 Days', min: 0, max: 7 },
+      { label: '7 - 14 Days', min: 8, max: 14 },
+      { label: '15 - 30 Days', min: 15, max: 30 },
+      { label: '31 - 60 Days', min: 31, max: 60 },
+      { label: '> 60 Days', min: 61, max: 9999 }
+    ];
+    return buckets.map(b => {
+      const inBucket = bookings.filter(bk => bk.leadTimeDays >= b.min && bk.leadTimeDays <= b.max);
+      const total = inBucket.length;
+      const cancelled = inBucket.filter(bk => bk.status === 'Cancelled').length;
+      const rate = total > 0 ? Math.round((cancelled / total) * 100) : 0;
+      const risk = rate >= 40 ? 'HIGH' : rate >= 20 ? 'MEDIUM' : 'LOW';
+      return { leadTime: b.label, rate, risk, total };
+    });
+  }, [bookings]);
 
   return (
     <div className="space-y-6">
@@ -78,47 +147,43 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
         </div>
       </div>
 
-      {/* 2. Admin KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* 2. Admin KPI Cards (Real live Supabase figures) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
         <KpiCard
           title="Total Bookings"
           value={totalBookingsCount.toLocaleString()}
-          change="+12.4%"
-          trend="up"
-          subtext="vs previous cycle"
+          subtext={`${confirmedCount} confirmed active`}
           icon={<CalendarCheck className="w-5 h-5 text-blue-600" />}
         />
         <KpiCard
           title="Total Customers"
           value={customers.length.toLocaleString()}
-          change="+8.1%"
-          trend="up"
           subtext="registered profiles"
           icon={<Users className="w-5 h-5 text-indigo-600" />}
         />
         <KpiCard
-          title="Cancelled Bookings"
-          value={cancelledCount}
-          change="-4.2%"
-          trend="down"
-          subtext="flagged & refunded"
-          icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
+          title="Collected Revenue"
+          value={`₹${actualCollectedRevenue.toLocaleString('en-IN')}`}
+          subtext={`Pending: ₹${pendingRevenue.toLocaleString('en-IN')}`}
+          icon={<CreditCard className="w-5 h-5 text-emerald-600" />}
         />
         <KpiCard
-          title="Cancellation Rate"
-          value={`${cancellationRate}%`}
-          change="-2.3%"
-          trend="down"
-          subtext="model baseline: 21.5%"
-          icon={<Percent className="w-5 h-5 text-amber-600" />}
+          title="Cancelled Bookings"
+          value={cancelledCount}
+          subtext={`Rate: ${cancellationRate}%`}
+          icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
         />
         <KpiCard
           title="Average ADR"
           value={`₹${avgAdr.toLocaleString('en-IN')}`}
-          change="+6.8%"
-          trend="up"
-          subtext="daily room rate"
-          icon={<DollarSign className="w-5 h-5 text-emerald-600" />}
+          subtext="real daily rate"
+          icon={<DollarSign className="w-5 h-5 text-amber-600" />}
+        />
+        <KpiCard
+          title="Room Status"
+          value={`${availableRoomsCount}/${totalRoomsCount}`}
+          subtext="available keys"
+          icon={<Building className="w-5 h-5 text-sky-600" />}
         />
       </div>
 
@@ -201,16 +266,20 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
               <span className="text-[11px] text-slate-500 font-mono">Monthly Rate %</span>
             </div>
             <div className="h-44 w-full">
-              <TrendLineChart
-                data={ANALYTICS_DATA.monthlyTrends.map(m => ({
-                  label: m.month,
-                  primary: m.bookings,
-                  secondary: m.cancellations
-                }))}
-                primaryLabel="Bookings"
-                secondaryLabel="Cancellations"
-                height={160}
-              />
+              {monthlyTrends.length > 0 ? (
+                <TrendLineChart
+                  data={monthlyTrends}
+                  primaryLabel="Bookings"
+                  secondaryLabel="Cancellations"
+                  height={160}
+                />
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-4 border border-dashed border-slate-200 rounded-lg bg-white/60">
+                  <CalendarCheck className="w-6 h-6 text-slate-300 mb-1" />
+                  <p className="text-xs font-semibold text-slate-600">No Booking History Recorded</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">As customer reservations are placed, monthly influx will dynamically plot here.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -266,37 +335,47 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredRiskList.slice(0, 5).map(b => (
-                  <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 font-mono font-semibold text-blue-700">
-                      {b.id}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="font-medium text-slate-900">{b.customerName}</div>
-                      <div className="text-[11px] text-slate-500 font-mono truncate">{b.customerEmail}</div>
-                    </td>
-                    <td className="py-3 px-4 font-medium text-slate-800">{b.roomTypeName}</td>
-                    <td className="py-3 px-4 font-mono text-slate-600">{b.checkIn}</td>
-                    <td className="py-3 px-4 font-mono text-slate-600">{b.leadTimeDays} days</td>
-                    <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
-                      {b.cancellationProbability}%
-                    </td>
-                    <td className="py-3 px-4">
-                      <RiskBadge level={b.cancellationRisk} probability={b.cancellationProbability} size="sm" />
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={() => {
-                          if (onSelectBooking) onSelectBooking(b.id);
-                          onNavigateTab('bookings');
-                        }}
-                        className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
-                      >
-                        Inspect
-                      </button>
+                {filteredRiskList.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                      <ShieldAlert className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+                      <p className="text-xs font-medium text-slate-600">No Reservations Flagged Under This Filter</p>
+                      <p className="text-[11px] text-slate-400">All current bookings are evaluated within normal stability thresholds.</p>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredRiskList.slice(0, 5).map(b => (
+                    <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 font-mono font-semibold text-blue-700">
+                        {b.id}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-slate-900">{b.customerName}</div>
+                        <div className="text-[11px] text-slate-500 font-mono truncate">{b.customerEmail}</div>
+                      </td>
+                      <td className="py-3 px-4 font-medium text-slate-800">{b.roomTypeName}</td>
+                      <td className="py-3 px-4 font-mono text-slate-600">{b.checkIn}</td>
+                      <td className="py-3 px-4 font-mono text-slate-600">{b.leadTimeDays} days</td>
+                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
+                        {b.cancellationProbability}%
+                      </td>
+                      <td className="py-3 px-4">
+                        <RiskBadge level={b.cancellationRisk} probability={b.cancellationProbability} size="sm" />
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          onClick={() => {
+                            if (onSelectBooking) onSelectBooking(b.id);
+                            onNavigateTab('bookings');
+                          }}
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          Inspect
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -316,30 +395,31 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
               Manage Types
             </button>
           </div>
-          <HorizontalBarChart
-            items={ANALYTICS_DATA.cancellationByRoomType.map(r => ({
-              label: r.roomType,
-              value: r.total,
-              rate: `${r.rate} cxl`,
-              color: 'bg-indigo-600'
-            }))}
-            valueSuffix=" rooms"
-          />
+          {roomTypeBreakdown.length > 0 ? (
+            <HorizontalBarChart
+              items={roomTypeBreakdown}
+              valueSuffix=" rooms"
+            />
+          ) : (
+            <div className="py-8 text-center text-slate-400 text-xs">
+              No room types registered in database.
+            </div>
+          )}
         </div>
 
         {/* Lead Time vs Cancellation Correlation */}
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-900">Cancellation by Lead Time</h3>
-            <span className="text-[11px] text-slate-400 font-mono">Historical ML</span>
+            <span className="text-[11px] text-slate-400 font-mono">Real Dynamic ML</span>
           </div>
           <div className="space-y-3.5">
-            {ANALYTICS_DATA.cancellationByLeadTime.map((item, idx) => (
+            {leadTimeBreakdown.map((item, idx) => (
               <div key={idx} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-slate-700">{item.leadTime}</span>
                   <span className="font-mono font-bold tabular-nums text-slate-900">
-                    {item.rate}%
+                    {item.rate}% ({item.total} bkgs)
                   </span>
                 </div>
                 <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
@@ -351,14 +431,14 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
                         ? 'bg-amber-500'
                         : 'bg-emerald-500'
                     }`}
-                    style={{ width: `${item.rate}%` }}
+                    style={{ width: `${Math.min(100, item.rate || 4)}%` }}
                   />
                 </div>
               </div>
             ))}
           </div>
           <p className="mt-4 text-[11px] text-slate-500 leading-relaxed">
-            Lead times &gt;60 days represent the highest cancellation vulnerability due to flexible OTA cancellation policies.
+            Dynamic distribution calculated from real booking check-in lead windows.
           </p>
         </div>
 
@@ -438,20 +518,30 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {bookings.slice(0, 6).map(b => (
-                <tr key={b.id} className="hover:bg-slate-50">
-                  <td className="py-2.5 px-3 font-mono font-medium text-slate-900">{b.id}</td>
-                  <td className="py-2.5 px-3 font-medium text-slate-800">{b.customerName}</td>
-                  <td className="py-2.5 px-3 text-slate-600">{b.roomTypeName}</td>
-                  <td className="py-2.5 px-3 font-mono text-slate-600">{b.checkIn}</td>
-                  <td className="py-2.5 px-3 font-mono text-slate-600">{b.nights}</td>
-                  <td className="py-2.5 px-3 font-mono font-medium text-slate-900">₹{b.adr.toLocaleString('en-IN')}</td>
-                  <td className="py-2.5 px-3 font-mono font-bold text-slate-900">₹{b.totalAmount.toLocaleString('en-IN')}</td>
-                  <td className="py-2.5 px-3">
-                    <StatusBadge status={b.status} size="sm" />
+              {bookings.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-400">
+                    <CalendarCheck className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+                    <p className="text-xs font-medium text-slate-600">No Reservations Found in Database</p>
+                    <p className="text-[11px] text-slate-400">New customer reservations will populate this live feed automatically.</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                bookings.slice(0, 6).map(b => (
+                  <tr key={b.id} className="hover:bg-slate-50">
+                    <td className="py-2.5 px-3 font-mono font-medium text-slate-900">{b.id}</td>
+                    <td className="py-2.5 px-3 font-medium text-slate-800">{b.customerName}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{b.roomTypeName}</td>
+                    <td className="py-2.5 px-3 font-mono text-slate-600">{b.checkIn}</td>
+                    <td className="py-2.5 px-3 font-mono text-slate-600">{b.nights}</td>
+                    <td className="py-2.5 px-3 font-mono font-medium text-slate-900">₹{b.adr.toLocaleString('en-IN')}</td>
+                    <td className="py-2.5 px-3 font-mono font-bold text-slate-900">₹{b.totalAmount.toLocaleString('en-IN')}</td>
+                    <td className="py-2.5 px-3">
+                      <StatusBadge status={b.status} size="sm" />
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

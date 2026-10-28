@@ -386,42 +386,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           password: cleanPassword
         });
 
-          if (authError) {
-          // If Supabase authentication failed, check if a local fallback or demo profile exists
-          const fallbackUser = getLocalFallbackProfile(cleanEmail);
-          if (fallbackUser && fallbackUser.status === 'active') {
-            saveLocalFallbackProfile(fallbackUser);
-            localStorage.setItem(
-              STORAGE_KEY_SESSION,
-              JSON.stringify({
-                id: fallbackUser.id,
-                email: fallbackUser.email,
-                role: fallbackUser.role,
-                timestamp: Date.now()
-              })
-            );
-            setAuthenticatedUser({ id: fallbackUser.id, email: cleanEmail });
-            setUserProfile(fallbackUser);
-            if (fallbackUser.role === 'customer') {
-              try {
-                const cp = await ensureCustomerProfileExists({
-                  id: fallbackUser.id,
-                  email: cleanEmail,
-                  fullName: fallbackUser.full_name,
-                  phone: fallbackUser.phone
-                });
-                setCustomerProfile(cp);
-              } catch {}
-            } else {
-              setCustomerProfile(null);
-            }
-            setIsLoading(false);
-            return {
-              success: true,
-              role: fallbackUser.role
-            };
-          }
-
+        if (authError) {
           setIsLoading(false);
 
           // Email unconfirmed check

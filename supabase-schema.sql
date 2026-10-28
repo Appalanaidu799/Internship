@@ -208,13 +208,26 @@ EXCEPTION WHEN OTHERS THEN
   NULL;
 END $$;
 
--- Ensure public.customers also has all verification and KYC columns
+-- Ensure public.customers also has all verification, document, and KYC columns
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS age integer;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS aadhar_number text;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS id_proof_type text DEFAULT 'Aadhar Card';
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS id_proof_number text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS address_line2 text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS id_document_name text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS id_document_size text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS id_document_preview text;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS ocr_status text DEFAULT 'not_scanned';
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS ocr_extracted_at timestamptz;
+ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS ocr_verified_by_user boolean DEFAULT false;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS emergency_contact_name text;
 ALTER TABLE public.customers ADD COLUMN IF NOT EXISTS emergency_contact_phone text;
+
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS customer_address2 text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS id_document_name text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS id_document_data text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS ocr_status text;
+ALTER TABLE public.bookings ADD COLUMN IF NOT EXISTS payment_verified_at timestamptz;
 
 -- Safe dynamic backfill of legacy bookings using EXECUTE (prevents PostgreSQL 42703 & 42P01 errors)
 DO $$

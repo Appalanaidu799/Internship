@@ -46,11 +46,15 @@ export interface Booking {
   customerState?: string;
   customerCountry?: string;
   customerPostalCode?: string;
+  customerAddress2?: string;
   aadharNumber?: string;
   idProofType?: string;
   idProofNumber?: string;
   aadharDocumentName?: string;
   aadharDocumentData?: string;
+  idDocumentName?: string;
+  idDocumentData?: string;
+  ocrStatus?: string;
   purposeOfVisit?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
@@ -70,6 +74,7 @@ export interface Booking {
   razorpayPaymentId?: string;
   razorpayOrderId?: string;
   razorpaySignature?: string;
+  paymentVerifiedAt?: string;
   cancellationProbability: number; // 0-100%
   cancellationRisk: RiskLevel;
   leadTimeDays: number;

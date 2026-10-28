@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search,
   Calendar,
@@ -33,8 +33,11 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
   const { roomTypes, customerBookings, activeCustomerBooking, cancelBooking } = useHotel();
 
   // Search Bar State
-  const [searchCheckIn, setSearchCheckIn] = useState('2026-10-18');
-  const [searchCheckOut, setSearchCheckOut] = useState('2026-10-22');
+  const defaultCheckIn = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const defaultCheckOut = useMemo(() => new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString().split('T')[0], []);
+
+  const [searchCheckIn, setSearchCheckIn] = useState(defaultCheckIn);
+  const [searchCheckOut, setSearchCheckOut] = useState(defaultCheckOut);
   const [searchGuests, setSearchGuests] = useState(2);
   const [hasSearched, setHasSearched] = useState(false);
 

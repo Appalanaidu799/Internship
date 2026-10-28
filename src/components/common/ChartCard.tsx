@@ -66,13 +66,17 @@ export const TrendLineChart: React.FC<{
   const paddingY = 30;
 
   const maxVal = Math.max(
-    ...data.flatMap(d => [d.primary, d.secondary ?? 0]),
+    ...data.flatMap(d => [Number(d.primary) || 0, Number(d.secondary) || 0]),
     10
   ) * 1.15;
 
   const pointsPrimary = data.map((d, i) => {
-    const x = paddingX + (i / (data.length - 1)) * (width - paddingX * 2);
-    const y = height - paddingY - (d.primary / maxVal) * (height - paddingY * 2);
+    const rawX = data.length > 1
+      ? paddingX + (i / (data.length - 1)) * (width - paddingX * 2)
+      : width / 2;
+    const rawY = height - paddingY - ((Number(d.primary) || 0) / maxVal) * (height - paddingY * 2);
+    const x = Number.isFinite(rawX) ? Math.round(rawX * 10) / 10 : width / 2;
+    const y = Number.isFinite(rawY) ? Math.round(rawY * 10) / 10 : height / 2;
     return { x, y, ...d };
   });
 
@@ -80,15 +84,21 @@ export const TrendLineChart: React.FC<{
     return i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`;
   }, '');
 
-  const areaPrimary = `${pathPrimary} L ${pointsPrimary[pointsPrimary.length - 1].x} ${height - paddingY} L ${pointsPrimary[0].x} ${height - paddingY} Z`;
+  const areaPrimary = pointsPrimary.length > 1
+    ? `${pathPrimary} L ${pointsPrimary[pointsPrimary.length - 1].x} ${height - paddingY} L ${pointsPrimary[0].x} ${height - paddingY} Z`
+    : `M ${pointsPrimary[0]?.x - 20} ${pointsPrimary[0]?.y} L ${pointsPrimary[0]?.x + 20} ${pointsPrimary[0]?.y} L ${pointsPrimary[0]?.x + 20} ${height - paddingY} L ${pointsPrimary[0]?.x - 20} ${height - paddingY} Z`;
 
   // Secondary path if exists
   let pathSecondary = '';
   if (secondaryLabel) {
     const pointsSec = data.map((d, i) => {
-      const x = paddingX + (i / (data.length - 1)) * (width - paddingX * 2);
-      const val = d.secondary ?? 0;
-      const y = height - paddingY - (val / maxVal) * (height - paddingY * 2);
+      const rawX = data.length > 1
+        ? paddingX + (i / (data.length - 1)) * (width - paddingX * 2)
+        : width / 2;
+      const val = Number(d.secondary) || 0;
+      const rawY = height - paddingY - (val / maxVal) * (height - paddingY * 2);
+      const x = Number.isFinite(rawX) ? Math.round(rawX * 10) / 10 : width / 2;
+      const y = Number.isFinite(rawY) ? Math.round(rawY * 10) / 10 : height / 2;
       return { x, y, val };
     });
     pathSecondary = pointsSec.reduce((acc, p, i) => {
@@ -191,7 +201,7 @@ export const TrendLineChart: React.FC<{
           <div
             className="absolute -top-1 bg-slate-900 text-white text-xs px-2.5 py-1.5 rounded shadow-lg pointer-events-none transform -translate-x-1/2 z-10 font-mono tabular-nums"
             style={{
-              left: `${(pointsPrimary[hoveredIdx].x / width) * 100}%`
+              left: `${Number.isFinite(pointsPrimary[hoveredIdx]?.x) ? (pointsPrimary[hoveredIdx].x / width) * 100 : 50}%`
             }}
           >
             <div className="font-sans font-semibold text-slate-200 text-[10px] mb-0.5">

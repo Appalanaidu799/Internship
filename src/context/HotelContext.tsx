@@ -21,6 +21,7 @@ import {
   isSupabaseConfigured
 } from '../lib/supabase';
 import { useAuth } from './AuthContext';
+import { Role, UserProfile } from '../types/auth';
 import {
   RoomType,
   Room,
@@ -46,6 +47,7 @@ interface HotelContextType {
   bookings: Booking[];
   customers: Customer[];
   managementUsers: ManagementUser[];
+  allUsers: UserProfile[];
   insights: AiInsight[];
   notifications: NotificationItem[];
   customerBookings: Booking[];
@@ -54,6 +56,8 @@ interface HotelContextType {
   // Mutation methods:
   addManagementUser: (user: { fullName: string; email: string; temporaryPassword?: string }) => void;
   deleteManagementUser: (id: string) => void;
+  updateUserRole: (userId: string, newRole: Role) => Promise<{ success: boolean; error?: string }>;
+  deleteUserAccount: (userId: string) => Promise<{ success: boolean; error?: string }>;
   updateRoomStatus: (roomId: string, status: RoomStatus) => void;
   addRoomType: (roomType: Omit<RoomType, 'id'>) => void;
   updateRoomType: (id: string, updated: Partial<RoomType>) => void;
@@ -111,6 +115,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [bookings, setBookings] = useState<Booking[]>(() => getStoredBookings());
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [managementUsers, setManagementUsers] = useState<ManagementUser[]>(INITIAL_MANAGEMENT_USERS);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [insights] = useState<AiInsight[]>(AI_INSIGHTS);
   const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
   const [customerBookings, setCustomerBookings] = useState<Booking[]>([]);
@@ -121,26 +126,128 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsDatabaseSyncing(true);
     try {
       if (isSupabaseConfigured) {
-        // Automatically sync any offline or unsynced bookings (e.g. prior failed requests) to Supabase
+        // Automatically sync any offline or unsynced bookings to Supabase
         await syncLocalBookingsToSupabase();
 
-        // Fetch bookings, room types, rooms, and customers in parallel from Supabase
-        const [dbBookings, dbRoomTypes, dbRooms, dbCustomers] = await Promise.all([
+        // 1. Fetch bookings, room types, rooms, customers, and all users in parallel
+        const [dbBookings, dbRoomTypes, dbRooms, dbCustomers, usersRes] = await Promise.all([
           fetchAllBookingsFromDatabase(),
           fetchRoomTypesFromDatabase(),
           fetchRoomsFromDatabase(),
-          fetchCustomersFromDatabase()
+          fetchCustomersFromDatabase(),
+          supabase.from('users').select('*').order('created_at', { ascending: false })
         ]);
 
-        if (dbBookings && dbBookings.length > 0) {
-          setBookings(dbBookings);
-        }
-        if (dbRoomTypes && dbRoomTypes.length > 0) {
+        const activeBookings = Array.isArray(dbBookings) ? dbBookings : [];
+        setBookings(activeBookings);
+
+        if (Array.isArray(dbRoomTypes) && dbRoomTypes.length > 0) {
           setRoomTypes(dbRoomTypes);
         }
-        if (dbRooms && dbRooms.length > 0) {
+        if (Array.isArray(dbRooms) && dbRooms.length > 0) {
           setRooms(dbRooms);
         }
+
+        // 2. Map all users across roles (customer, management, admin)
+        let loadedUsers: UserProfile[] = [];
+        if (usersRes && Array.isArray(usersRes.data)) {
+          loadedUsers = usersRes.data.map((u: any) => ({
+            id: u.id,
+            full_name: u.full_name || u.email?.split('@')[0] || 'User',
+            email: u.email,
+            phone: u.phone || '',
+            role: (u.role || 'customer') as Role,
+            status: (u.status || 'active') as any,
+            profile_image: u.profile_image || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(u.full_name || u.email || 'User')}`,
+            created_at: u.created_at,
+            updated_at: u.updated_at
+          }));
+          setAllUsers(loadedUsers);
+
+          // Map management accounts from all users
+          const mgmtAccounts: ManagementUser[] = loadedUsers
+            .filter(u => u.role === 'management')
+            .map(u => ({
+              id: u.id,
+              fullName: u.full_name,
+              email: u.email,
+              status: (u.status === 'active' ? 'Active' : 'Inactive') as any,
+              createdAt: u.created_at ? u.created_at.split('T')[0] : '2026-10-01',
+              lastLogin: 'Active session',
+              department: 'Operations & Management'
+            }));
+          setManagementUsers(mgmtAccounts);
+        }
+
+        // 3. Combine public.customers and loaded customer users into unified live customer directory
+        const customerMap = new Map<string, any>();
+
+        loadedUsers
+          .filter(u => u.role === 'customer')
+          .forEach((u: any) => {
+            const key = u.email ? u.email.toLowerCase() : u.id;
+            customerMap.set(key, {
+              id: u.id,
+              customer_code: `CUS-${u.id.substring(0, 8).toUpperCase()}`,
+              full_name: u.full_name,
+              email: u.email,
+              phone: u.phone || '',
+              created_at: u.created_at
+            });
+          });
+
+        if (Array.isArray(dbCustomers)) {
+          dbCustomers.forEach((c: any) => {
+            const key = (c.email || c.id).toLowerCase();
+            const existing = customerMap.get(key);
+            customerMap.set(key, {
+              ...existing,
+              ...c,
+              id: c.id || existing?.id,
+              customer_code: c.customer_code || existing?.customer_code,
+              full_name: c.full_name || existing?.full_name,
+              email: c.email || existing?.email,
+              phone: c.phone || existing?.phone
+            });
+          });
+        }
+
+        const combinedRecords = Array.from(customerMap.values());
+        const mappedCustomers: Customer[] = combinedRecords.map(sc => {
+          const custBookings = activeBookings.filter(
+            b => b.customerId === sc.id || (b.customerEmail && b.customerEmail.toLowerCase() === sc.email?.toLowerCase())
+          );
+          const totalBookings = custBookings.length;
+          const cancelledBookings = custBookings.filter(b => b.status === 'Cancelled').length;
+          const totalSpend = custBookings
+            .filter(b => b.status !== 'Cancelled' && b.paymentStatus === 'Paid')
+            .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+          const lastBooking = custBookings[0]?.createdAt || (sc.created_at ? sc.created_at.split('T')[0] : 'No bookings yet');
+
+          return {
+            id: sc.id,
+            customerCode: sc.customer_code || `CUS-${sc.id.substring(0, 8).toUpperCase()}`,
+            fullName: sc.full_name || sc.email?.split('@')[0] || 'Guest Customer',
+            email: sc.email,
+            phone: sc.phone || '',
+            dateOfBirth: sc.date_of_birth,
+            gender: sc.gender,
+            address: sc.address_line,
+            city: sc.city,
+            state: sc.state,
+            country: sc.country,
+            emergencyContactName: sc.emergency_contact_name,
+            emergencyContactPhone: sc.emergency_contact_phone,
+            totalBookings,
+            cancelledBookings,
+            totalSpend,
+            vipStatus: totalSpend > 5000 || totalBookings >= 3,
+            memberSince: sc.created_at ? sc.created_at.split('T')[0] : '2026-10-01',
+            lastBookingDate: lastBooking
+          };
+        });
+
+        setCustomers(mappedCustomers);
       }
     } catch (err) {
       console.warn('Error synchronizing hotel data with Supabase:', err);
@@ -162,7 +269,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {
       console.warn('Notice fetching customer bookings:', e);
       const all = getStoredBookings();
-      setCustomerBookings(all.filter(b => b.customerId === user.id));
+      setCustomerBookings(all.filter(b => b.customerId === user.id || (b.customerEmail && b.customerEmail.toLowerCase() === user.email?.toLowerCase())));
     }
   }, [user]);
 
@@ -175,7 +282,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     refreshCustomerBookings();
   }, [refreshCustomerBookings]);
 
-  // Set up Supabase Realtime channel for live bookings & customers updates
+  // Set up Supabase Realtime channel for live bookings, rooms, room types, users & customers updates
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
@@ -187,20 +294,45 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         (payload) => {
           console.log('Realtime event received for bookings:', payload);
           fetchAllBookingsFromDatabase().then(b => {
-            if (b) setBookings(b);
+            if (Array.isArray(b)) setBookings(b);
           });
           if (user?.id) {
             fetchCustomerBookingsFromDatabase(user.id).then(cb => {
-              if (cb) setCustomerBookings(cb);
+              if (Array.isArray(cb)) setCustomerBookings(cb);
             });
           }
         }
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'rooms' },
+        () => {
+          fetchRoomsFromDatabase().then(r => {
+            if (Array.isArray(r)) setRooms(r);
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'room_types' },
+        () => {
+          fetchRoomTypesFromDatabase().then(rt => {
+            if (Array.isArray(rt)) setRoomTypes(rt);
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'users' },
+        () => {
+          refreshAllData();
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'customers' },
         () => {
-          fetchCustomersFromDatabase();
+          refreshAllData();
         }
       )
       .subscribe();
@@ -208,59 +340,18 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
-
-  // Synchronize customer directory with registered customer profiles and real live booking data
-  useEffect(() => {
-    const storedCustomers = getStoredCustomers();
-    const storedBookings = bookings.length > 0 ? bookings : getStoredBookings();
-
-    const mappedCustomers: Customer[] = storedCustomers.map(sc => {
-      const custBookings = storedBookings.filter(
-        b => b.customerId === sc.id || (b.customerEmail && b.customerEmail.toLowerCase() === sc.email?.toLowerCase())
-      );
-      const totalBookings = custBookings.length;
-      const cancelledBookings = custBookings.filter(b => b.status === 'Cancelled').length;
-      const totalSpend = custBookings
-        .filter(b => b.status !== 'Cancelled')
-        .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
-      const lastBooking = custBookings[0]?.createdAt || sc.created_at?.split('T')[0] || '2026-10-01';
-
-      return {
-        id: sc.id,
-        customerCode: sc.customer_code,
-        fullName: sc.full_name,
-        email: sc.email,
-        phone: sc.phone || '',
-        dateOfBirth: sc.date_of_birth,
-        gender: sc.gender,
-        address: sc.address_line,
-        city: sc.city,
-        state: sc.state,
-        country: sc.country,
-        emergencyContactName: sc.emergency_contact_name,
-        emergencyContactPhone: sc.emergency_contact_phone,
-        totalBookings,
-        cancelledBookings,
-        totalSpend,
-        vipStatus: totalSpend > 2000 || totalBookings >= 3,
-        memberSince: sc.created_at ? sc.created_at.split('T')[0] : '2025-01-10',
-        lastBookingDate: lastBooking
-      };
-    });
-
-    setCustomers(mappedCustomers);
-  }, [customerBookings, bookings]);
+  }, [user, refreshAllData]);
 
   // Active customer booking for customer overview
   const activeCustomerBooking =
     customerBookings.find(b => b.status === 'Confirmed' || b.status === 'Checked-In') || null;
 
-  const addManagementUser = async (userData: { fullName: string; email: string }) => {
+  const addManagementUser = async (userData: { fullName: string; email: string; temporaryPassword?: string }) => {
+    const newId = `mgmt-${Date.now()}`;
     const newUser: ManagementUser = {
-      id: `m-${Date.now()}`,
+      id: newId,
       fullName: userData.fullName,
-      email: userData.email,
+      email: userData.email.toLowerCase(),
       status: 'Active',
       createdAt: new Date().toISOString().split('T')[0],
       lastLogin: 'Never logged in',
@@ -268,35 +359,96 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     setManagementUsers(prev => [newUser, ...prev]);
 
-    syncUserToDatabase({
-      id: newUser.id,
-      full_name: userData.fullName,
-      email: userData.email.toLowerCase(),
-      phone: '',
-      role: 'management',
-      status: 'active',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }).catch(() => {});
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('users').upsert({
+          id: newId,
+          full_name: userData.fullName,
+          email: userData.email.toLowerCase(),
+          phone: '',
+          role: 'management',
+          status: 'active',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'email' });
+      } catch (e) {
+        console.warn('Error adding management user to Supabase:', e);
+      }
+    }
+    refreshAllData();
   };
 
   const deleteManagementUser = async (id: string) => {
     const target = managementUsers.find(u => u.id === id);
     setManagementUsers(prev => prev.filter(u => u.id !== id));
-    if (target?.email) {
-      deleteLocalFallbackProfile(target.email.toLowerCase());
-      if (getRemoteTableStatus() === 'ready') {
-        try {
-          await supabase.from('users').delete().eq('email', target.email.toLowerCase());
-        } catch (e) {
-          console.warn('Notice deleting from Supabase users table:', e);
+    if (isSupabaseConfigured && target?.email) {
+      try {
+        deleteLocalFallbackProfile(target.email.toLowerCase());
+        await supabase.from('users').delete().eq('email', target.email.toLowerCase());
+      } catch (e) {
+        console.warn('Notice deleting from Supabase users table:', e);
+      }
+    }
+    refreshAllData();
+  };
+
+  const updateUserRole = async (userId: string, newRole: Role): Promise<{ success: boolean; error?: string }> => {
+    try {
+      // 1. Optimistic UI update
+      setAllUsers(prev => prev.map(u => (u.id === userId ? { ...u, role: newRole, updated_at: new Date().toISOString() } : u)));
+
+      // 2. Persist to Supabase public.users
+      if (isSupabaseConfigured) {
+        const { error } = await supabase
+          .from('users')
+          .update({ role: newRole, updated_at: new Date().toISOString() })
+          .eq('id', userId);
+
+        if (error) {
+          console.warn('Notice from updating user role in Supabase:', error);
+          return { success: false, error: error.message };
         }
       }
+
+      await refreshAllData();
+      return { success: true };
+    } catch (err: any) {
+      console.warn('Error updating user role:', err);
+      return { success: false, error: err?.message || 'Failed to update user role' };
     }
   };
 
-  const updateRoomStatus = (roomId: string, status: RoomStatus) => {
+  const deleteUserAccount = async (userId: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setAllUsers(prev => prev.filter(u => u.id !== userId));
+      setManagementUsers(prev => prev.filter(u => u.id !== userId));
+      setCustomers(prev => prev.filter(c => c.id !== userId));
+
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.from('users').delete().eq('id', userId);
+        if (error) {
+          console.warn('Notice deleting user from Supabase:', error);
+          return { success: false, error: error.message };
+        }
+      }
+
+      await refreshAllData();
+      return { success: true };
+    } catch (err: any) {
+      console.warn('Error deleting user:', err);
+      return { success: false, error: err?.message || 'Failed to delete user' };
+    }
+  };
+
+  const updateRoomStatus = async (roomId: string, status: RoomStatus) => {
     setRooms(prev => prev.map(r => (r.id === roomId ? { ...r, status } : r)));
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('rooms').update({ status }).eq('id', roomId);
+      } catch (e) {
+        console.warn('Notice updating room status in Supabase:', e);
+      }
+    }
   };
 
   const addRoomType = (roomTypeData: Omit<RoomType, 'id'>) => {
@@ -305,14 +457,38 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...roomTypeData
     };
     setRoomTypes(prev => [...prev, newRt]);
+    if (isSupabaseConfigured) {
+      supabase.from('room_types').insert({
+        id: newRt.id,
+        name: newRt.name,
+        description: newRt.description,
+        capacity: newRt.capacity,
+        base_price: newRt.basePrice,
+        amenities: newRt.amenities,
+        is_active: newRt.status === 'Active'
+      }).then(() => refreshAllData());
+    }
   };
 
   const updateRoomType = (id: string, updated: Partial<RoomType>) => {
     setRoomTypes(prev => prev.map(rt => (rt.id === id ? { ...rt, ...updated } : rt)));
+    if (isSupabaseConfigured) {
+      const updatePayload: any = {};
+      if (updated.name) updatePayload.name = updated.name;
+      if (updated.description) updatePayload.description = updated.description;
+      if (updated.capacity) updatePayload.capacity = updated.capacity;
+      if (updated.basePrice) updatePayload.base_price = updated.basePrice;
+      if (updated.amenities) updatePayload.amenities = updated.amenities;
+      if (updated.status) updatePayload.is_active = updated.status === 'Active';
+      supabase.from('room_types').update(updatePayload).eq('id', id).then(() => refreshAllData());
+    }
   };
 
   const deleteRoomType = (id: string) => {
     setRoomTypes(prev => prev.filter(rt => rt.id !== id));
+    if (isSupabaseConfigured) {
+      supabase.from('room_types').delete().eq('id', id).then(() => refreshAllData());
+    }
   };
 
   const addRoom = (roomData: Omit<Room, 'id'>) => {
@@ -321,6 +497,15 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...roomData
     };
     setRooms(prev => [...prev, newRoom]);
+    if (isSupabaseConfigured) {
+      supabase.from('rooms').insert({
+        id: newRoom.id,
+        room_number: newRoom.roomNumber,
+        room_type_id: newRoom.roomTypeId,
+        floor_number: newRoom.floor,
+        status: newRoom.status
+      }).then(() => refreshAllData());
+    }
   };
 
   const cancelBooking = async (bookingId: string) => {
@@ -468,6 +653,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         bookings,
         customers,
         managementUsers,
+        allUsers,
         insights,
         notifications,
         customerBookings,
@@ -475,6 +661,8 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isDatabaseSyncing,
         addManagementUser,
         deleteManagementUser,
+        updateUserRole,
+        deleteUserAccount,
         updateRoomStatus,
         addRoomType,
         updateRoomType,

@@ -17,14 +17,19 @@ import {
   Users,
   RefreshCw,
   CreditCard,
-  FileCheck
+  FileCheck,
+  RotateCcw,
+  XCircle,
+  AlertCircle,
+  Receipt,
+  ArrowRight
 } from 'lucide-react';
 import { useHotel } from '../../context/HotelContext';
 import { useAuth } from '../../context/AuthContext';
 import { Booking } from '../../types/hotel';
 import { StatusBadge } from '../common/StatusBadge';
 import { Modal } from '../common/Modal';
-import { convertUsdToInr, formatInr } from '../../lib/razorpay';
+import { calculateRefundSchedule } from '../../lib/supabase';
 
 type BookingFilterTab = 'ALL' | 'UPCOMING' | 'CURRENT' | 'COMPLETED' | 'CANCELLED';
 
@@ -41,6 +46,9 @@ export const CustomerMyBookings: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<BookingFilterTab>('ALL');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [bookingToCancel, setBookingToCancel] = useState<Booking | null>(null);
+  const [cancellationReason, setCancellationReason] = useState('Change of travel plans / scheduling conflict');
+
   const [cancelFeedback, setCancelFeedback] = useState('');
   const [cancelError, setCancelError] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
@@ -88,45 +96,45 @@ export const CustomerMyBookings: React.FC = () => {
     }
   }, [activeTab, categorizedBookings, customerBookings]);
 
-  // Hotel Cancellation Policy check: standard reservations eligible for cancellation if check-in >= 48 hours away
-  const canCancel = (b: Booking): boolean => {
-    if (b.status !== 'Confirmed') return false;
-    const checkInDate = new Date(b.checkIn).getTime();
-    const now = new Date().getTime();
-    const hoursDifference = (checkInDate - now) / (1000 * 3600);
-    return hoursDifference >= 48;
+  // Handle open cancellation modal (either from card or inside View Voucher)
+  const handleInitiateCancel = (b: Booking) => {
+    setBookingToCancel(b);
+    setCancellationReason('Change of travel plans / scheduling conflict');
+    setCancelError('');
   };
 
-  const handleCancel = async (bookingId: string) => {
-    setCancelError('');
-    setCancelFeedback('');
+  // Submit cancellation with day-based refund calculation
+  const handleConfirmCancellation = async () => {
+    if (!bookingToCancel) return;
 
-    const target = customerBookings.find(b => b.id === bookingId || b.bookingReference === bookingId);
-    if (!target) return;
-
-    if (!canCancel(target)) {
-      setCancelError('According to hotel policy, cancellations must be made at least 48 hours prior to check-in.');
-      return;
-    }
-
-    if (
-      !confirm(
-        `Are you sure you want to cancel reservation ${target.bookingReference || target.id}? Any refundable deposit will be credited back.`
-      )
-    ) {
-      return;
-    }
+    const schedule = calculateRefundSchedule(bookingToCancel.checkIn, bookingToCancel.totalAmount);
 
     setIsCancelling(true);
+    setCancelError('');
+
     try {
-      await cancelBooking(target.id);
-      setCancelFeedback(`Reservation ${target.bookingReference || target.id} has been successfully cancelled.`);
-      if (selectedBooking && (selectedBooking.id === bookingId || selectedBooking.bookingReference === bookingId)) {
-        setSelectedBooking(prev => prev ? { ...prev, status: 'Cancelled' } : null);
-      }
-      setTimeout(() => setCancelFeedback(''), 5000);
+      await cancelBooking(bookingToCancel.id, {
+        refundAmount: schedule.refundAmount,
+        cancellationFee: schedule.cancellationFee,
+        cancellationReason: cancellationReason,
+        refundPercentage: schedule.refundPercentage
+      });
+
+      const refLabel = bookingToCancel.bookingReference || bookingToCancel.id;
+      setCancelFeedback(
+        `Reservation ${refLabel} cancelled. Refund of ₹${schedule.refundAmount.toLocaleString('en-IN')} (${schedule.refundPercentage}%) credited back to your Razorpay payment method.`
+      );
+
+      // Close both modals
+      setBookingToCancel(null);
+      setSelectedBooking(null);
+
+      // Automatically switch to Cancelled tab so customer sees the verified status
+      setActiveTab('CANCELLED');
+
+      setTimeout(() => setCancelFeedback(''), 7000);
     } catch (err: any) {
-      setCancelError(err?.message || 'Failed to cancel reservation.');
+      setCancelError(err?.message || 'Failed to cancel reservation. Please try again.');
     } finally {
       setIsCancelling(false);
     }
@@ -137,6 +145,12 @@ export const CustomerMyBookings: React.FC = () => {
     setCopiedRef(true);
     setTimeout(() => setCopiedRef(false), 2000);
   };
+
+  // Active cancellation schedule if modal is open
+  const cancelSchedule = useMemo(() => {
+    if (!bookingToCancel) return null;
+    return calculateRefundSchedule(bookingToCancel.checkIn, bookingToCancel.totalAmount);
+  }, [bookingToCancel]);
 
   return (
     <div className="space-y-6">
@@ -170,16 +184,16 @@ export const CustomerMyBookings: React.FC = () => {
       </div>
 
       {cancelFeedback && (
-        <div className="p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2.5 animate-fadeIn">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{cancelFeedback}</span>
+          <span className="font-medium">{cancelFeedback}</span>
         </div>
       )}
 
       {cancelError && (
-        <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2.5 animate-fadeIn">
           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>{cancelError}</span>
+          <span className="font-medium">{cancelError}</span>
         </div>
       )}
 
@@ -278,8 +292,9 @@ export const CustomerMyBookings: React.FC = () => {
           </div>
         ) : (
           filteredList.map(b => {
-            const isEligibleCancel = canCancel(b);
             const refCode = b.bookingReference || b.id;
+            const isConfirmed = b.status === 'Confirmed';
+            const isCancelled = b.status === 'Cancelled';
 
             return (
               <div
@@ -294,9 +309,20 @@ export const CustomerMyBookings: React.FC = () => {
                       <span>{refCode}</span>
                     </span>
                     <StatusBadge status={b.status} size="sm" />
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Payment: {b.paymentStatus || 'Paid'}
-                    </span>
+
+                    {isCancelled ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 font-mono">
+                        <Receipt className="w-3 h-3 text-amber-600" />
+                        <span>
+                          Refund: ₹{(b.refundAmount ?? b.totalAmount).toLocaleString('en-IN')}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        Payment: {b.paymentStatus || 'Paid'}
+                      </span>
+                    )}
+
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                       <CreditCard className="w-3 h-3 text-blue-600" />
                       <span>{b.paymentMethod || 'Razorpay'}</span>
@@ -350,6 +376,13 @@ export const CustomerMyBookings: React.FC = () => {
                       Booked {b.createdAt}
                     </span>
                   </div>
+
+                  {/* Cancelled notes if available */}
+                  {isCancelled && b.cancellationReason && (
+                    <div className="text-[11px] text-rose-700 bg-rose-50/60 p-2 rounded-lg border border-rose-100 inline-block font-mono">
+                      Reason: {b.cancellationReason}
+                    </div>
+                  )}
                 </div>
 
                 {/* Right side actions */}
@@ -362,23 +395,16 @@ export const CustomerMyBookings: React.FC = () => {
                     <span>View Voucher</span>
                   </button>
 
-                  {b.status === 'Confirmed' && isEligibleCancel && (
+                  {/* Cancel Booking Button directly accessible on confirmed reservations */}
+                  {isConfirmed && (
                     <button
-                      disabled={isCancelling}
-                      onClick={() => handleCancel(b.id)}
-                      className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold border border-rose-200 transition-colors disabled:opacity-50"
+                      onClick={() => handleInitiateCancel(b)}
+                      className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold border border-rose-200 transition-colors inline-flex items-center gap-1.5 shadow-2xs"
+                      title="Cancel reservation and calculate refund"
                     >
-                      Cancel Booking
+                      <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Cancel Booking</span>
                     </button>
-                  )}
-
-                  {b.status === 'Confirmed' && !isEligibleCancel && (
-                    <span
-                      className="text-[10px] text-slate-400 italic max-w-[130px] leading-tight text-right hidden lg:block"
-                      title="Cancellations are permitted up to 48 hours prior to check-in"
-                    >
-                      Cancellation deadline elapsed (&lt;48h)
-                    </span>
                   )}
                 </div>
               </div>
@@ -387,7 +413,9 @@ export const CustomerMyBookings: React.FC = () => {
         )}
       </div>
 
-      {/* Booking Details Voucher Modal */}
+      {/* =========================================================================
+          DIGITAL STAY VOUCHER & FOLIO MODAL
+          ========================================================================= */}
       {selectedBooking && (
         <Modal
           isOpen={Boolean(selectedBooking)}
@@ -398,14 +426,17 @@ export const CustomerMyBookings: React.FC = () => {
           footer={
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-2">
-                {selectedBooking.status === 'Confirmed' && canCancel(selectedBooking) && (
+                {selectedBooking.status === 'Confirmed' && (
                   <button
                     type="button"
-                    disabled={isCancelling}
-                    onClick={() => handleCancel(selectedBooking.id)}
-                    className="px-3.5 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold border border-rose-200 transition-colors disabled:opacity-50"
+                    onClick={() => {
+                      const b = selectedBooking;
+                      handleInitiateCancel(b);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold border border-rose-200 transition-colors"
                   >
-                    Cancel Reservation
+                    <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Cancel Reservation & Claim Refund</span>
                   </button>
                 )}
               </div>
@@ -449,6 +480,62 @@ export const CustomerMyBookings: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {/* If Confirmed: Cancellation Action Banner inside Voucher */}
+            {selectedBooking.status === 'Confirmed' && (
+              <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <RotateCcw className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h5 className="font-bold text-rose-950 text-xs">Flexible Booking Cancellation & Refund</h5>
+                    <p className="text-[11px] text-rose-800/90 mt-0.5">
+                      Need to reschedule or cancel? You are eligible for an automated day-based refund credited directly to your Razorpay account.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = selectedBooking;
+                    handleInitiateCancel(b);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors shadow-xs shrink-0 self-start sm:self-auto"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Cancel Reservation</span>
+                </button>
+              </div>
+            )}
+
+            {/* If already Cancelled: Refund Receipt Banner */}
+            {selectedBooking.status === 'Cancelled' && (
+              <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/70 space-y-2">
+                <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                  <CheckCircle2 className="w-4 h-4 text-amber-600" />
+                  <span>Reservation Cancelled & Refund Credited</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase block">Refund Amount</span>
+                    <span className="font-mono font-bold text-emerald-700 text-sm">
+                      ₹{(selectedBooking.refundAmount ?? selectedBooking.totalAmount).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase block">Refund Destination</span>
+                    <span className="font-semibold text-slate-800">
+                      {selectedBooking.paymentMethod || 'Razorpay Gateway'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] uppercase block">Cancellation Reason</span>
+                    <span className="text-slate-700">
+                      {selectedBooking.cancellationReason || 'Voluntary Customer Cancellation'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Stay Dates & Guest Details Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
@@ -532,14 +619,6 @@ export const CustomerMyBookings: React.FC = () => {
                     </span>
                   </div>
                 )}
-                {selectedBooking.emergencyContactName && (
-                  <div>
-                    <span className="text-slate-400 text-[11px] block">Emergency Contact:</span>
-                    <span className="text-slate-800">
-                      {selectedBooking.emergencyContactName} {selectedBooking.emergencyContactPhone ? `(${selectedBooking.emergencyContactPhone})` : ''}
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -560,7 +639,7 @@ export const CustomerMyBookings: React.FC = () => {
                   <div className="text-right">
                     <span className="font-mono text-blue-700 font-bold">₹{selectedBooking.totalAmount.toLocaleString('en-IN')}</span>
                     <span className="text-xs font-mono text-emerald-700 ml-1.5 font-semibold">
-                      (Paid in Full)
+                      ({selectedBooking.status === 'Cancelled' ? 'Refund Processed' : 'Paid in Full'})
                     </span>
                   </div>
                 </div>
@@ -574,30 +653,149 @@ export const CustomerMyBookings: React.FC = () => {
                     )}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-[11px] text-slate-500">
-                  <span>Payment Verification:</span>
-                  <span className="font-semibold text-emerald-600 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Verified & Settled</span>
+              </div>
+            </div>
+
+            {/* Cancellation Policy Reference */}
+            <div className="text-[11px] text-slate-500 bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-1.5">
+              <span className="font-bold text-slate-700 block">Automated Cancellation Refund Schedule:</span>
+              <ul className="list-disc list-inside space-y-0.5 text-slate-600">
+                <li>7+ days before check-in: <strong>100% full refund</strong> (no fee)</li>
+                <li>3 to 6 days before check-in: <strong>75% refund</strong> (25% hotel fee)</li>
+                <li>1 to 2 days before check-in: <strong>50% refund</strong> (50% hotel fee)</li>
+                <li>Under 24 hours / same-day: <strong>25% courtesy refund</strong> (75% fee)</li>
+              </ul>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Refunds are credited directly to the originating payment card or UPI account within 3–5 working days.
+              </p>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* =========================================================================
+          CANCELLATION & REFUND BREAKDOWN CONFIRMATION MODAL
+          ========================================================================= */}
+      {bookingToCancel && cancelSchedule && (
+        <Modal
+          isOpen={Boolean(bookingToCancel)}
+          onClose={() => setBookingToCancel(null)}
+          title="Cancel Reservation & Refund Settlement"
+          subtitle={`Reference: ${bookingToCancel.bookingReference || bookingToCancel.id} · ${bookingToCancel.roomTypeName}`}
+          maxWidth="md"
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setBookingToCancel(null)}
+                disabled={isCancelling}
+                className="px-3.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                Keep Reservation
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancellation}
+                disabled={isCancelling}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors shadow-xs disabled:opacity-50"
+              >
+                {isCancelling && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>{isCancelling ? 'Processing Refund...' : 'Confirm Cancellation & Refund'}</span>
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-4 text-xs">
+            {/* Arrival Notice & Applied Refund Tier Card */}
+            <div className="p-4 rounded-xl bg-slate-900 text-white space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+                  Scheduled Check-In
+                </span>
+                <span className="font-mono text-xs font-bold text-blue-400">
+                  {bookingToCancel.checkIn}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-slate-800">
+                <span className="text-xs text-slate-300">Days to Arrival:</span>
+                <span className="font-mono font-bold text-white text-sm">
+                  {cancelSchedule.daysRemaining} {cancelSchedule.daysRemaining === 1 ? 'Day' : 'Days'}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-white/10 flex items-center justify-between text-xs">
+                <span className="text-slate-300">Applied Refund Tier:</span>
+                <span className="font-bold text-emerald-400">{cancelSchedule.tierLabel}</span>
+              </div>
+            </div>
+
+            {/* Financial Refund Breakdown Table */}
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2.5">
+              <h5 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                <Receipt className="w-4 h-4 text-slate-500" />
+                <span>Financial Folio Settlement</span>
+              </h5>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Total Amount Paid (via Razorpay):</span>
+                  <span className="font-mono font-semibold text-slate-900">
+                    ₹{bookingToCancel.totalAmount.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="flex justify-between text-rose-700">
+                  <span>Hotel Cancellation / Retention Fee ({100 - cancelSchedule.refundPercentage}%):</span>
+                  <span className="font-mono font-semibold">
+                    -₹{cancelSchedule.cancellationFee.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-sm font-bold">
+                  <span className="text-slate-900">Net Refund Payable to You:</span>
+                  <span className="font-mono text-emerald-700 text-base">
+                    ₹{cancelSchedule.refundAmount.toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Special Requests */}
-            {selectedBooking.specialRequests && (
-              <div className="p-3.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-xs">
-                <span className="font-bold block mb-0.5">Special Guest Requests:</span>
-                <p className="italic">{selectedBooking.specialRequests}</p>
+            {/* Refund Crediting Notice */}
+            <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-blue-900 text-xs flex items-start gap-2.5">
+              <CreditCard className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-blue-950">Refund Processing via Razorpay Gateway</p>
+                <p className="text-[11px] text-blue-800/90 mt-0.5 leading-relaxed">
+                  Upon confirmation, the refund of <strong>₹{cancelSchedule.refundAmount.toLocaleString('en-IN')}</strong> will be credited directly back to your original payment instrument (UPI / Card) within 3–5 banking business days.
+                </p>
               </div>
-            )}
+            </div>
 
-            {/* Cancellation Policy Notice */}
-            <div className="text-[11px] text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-1">
-              <span className="font-bold text-slate-700 block">Cancellation & Amendment Policy:</span>
-              <p>
-                Flexible cancellation is permitted up to 48 hours prior to 2:00 PM local hotel time on check-in day. In the event of timely cancellation, refundable deposits are returned directly to the originating payment instrument within 3–5 business days.
-              </p>
+            {/* Reason for Cancellation */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Reason for Cancellation *
+              </label>
+              <select
+                value={cancellationReason}
+                onChange={e => setCancellationReason(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-slate-800"
+              >
+                <option value="Change of travel plans / scheduling conflict">
+                  Change of travel plans / scheduling conflict
+                </option>
+                <option value="Flight or transit delay / cancellation">
+                  Flight or transit delay / cancellation
+                </option>
+                <option value="Medical or personal emergency">
+                  Medical or personal emergency
+                </option>
+                <option value="Found alternative accommodation">
+                  Found alternative accommodation
+                </option>
+                <option value="Personal budget / financial reasons">
+                  Personal budget / financial reasons
+                </option>
+                <option value="Other reason">
+                  Other reason
+                </option>
+              </select>
             </div>
           </div>
         </Modal>

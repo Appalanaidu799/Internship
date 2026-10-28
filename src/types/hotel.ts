@@ -82,6 +82,11 @@ export interface Booking {
   depositType: 'No Deposit' | 'Non Refundable' | 'Refundable';
   createdAt: string;
   specialRequests?: string;
+  refundAmount?: number;
+  cancellationFee?: number;
+  cancellationReason?: string;
+  cancelledAt?: string;
+  refundPercentage?: number;
 }
 
 export interface Customer {

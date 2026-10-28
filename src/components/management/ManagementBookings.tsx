@@ -151,6 +151,16 @@ export const ManagementBookings: React.FC = () => {
           }
         >
           <div className="space-y-3 text-xs">
+            {selectedBooking.status === 'Cancelled' && (
+              <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 space-y-1">
+                <span className="font-bold block text-xs">Reservation Cancelled</span>
+                <p className="text-[11px] text-amber-800">
+                  Refund: <strong>₹{(selectedBooking.refundAmount ?? selectedBooking.totalAmount).toLocaleString('en-IN')}</strong>
+                  {selectedBooking.cancellationReason && ` · Reason: ${selectedBooking.cancellationReason}`}
+                </p>
+              </div>
+            )}
+
             <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
               <p className="font-bold text-slate-900 text-sm">{selectedBooking.roomTypeName}</p>
               <p className="text-slate-600 font-mono mt-0.5">{selectedBooking.checkIn} → {selectedBooking.checkOut} ({selectedBooking.nights} nights, {selectedBooking.guests} guests)</p>

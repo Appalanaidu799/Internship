@@ -1,26 +1,34 @@
-# Unified User Directory & Role Promotion Management
+# Dynamic Cancellation Engine & Multi-Tier Refund System
 
-Expand the Admin panel's user management module from a management-only list into a comprehensive **User & Role Access Management Console**. This console provides complete visibility over all hotel users (Customers, Management, and Admins), alongside a secure **Action Modal Dialog** allowing Administrators to review and promote/demote user roles across Customer, Management, and Admin tiers with real-time Supabase database synchronization.
-
----
+A full-stack enhancement enabling customers to cancel hotel reservations with day-based automated refund calculations, removing the restrictive deadline lock, visualizing the cancellation action inside the Digital Voucher, and synchronizing the `Cancelled` state across Customer, Management, and Admin roles in Supabase.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following architectural and interaction decisions have been aligned based on user preferences and existing system security rules:
+> The restrictive deadline notice (`Cancellation deadline elapsed (<48h)`) will be completely eliminated. Instead, customers can cancel reservations with transparent, day-based refund tier calculations credited back to their original payment instrument (Razorpay).
 
-- **Confirmed Decision (Phase 1)**: Role modification uses an **Action Modal Dialog** rather than instant inline switching, providing administrators with a clear audit review (showing user email, current role, destination clearance tier, and access privileges summary) before committing the change.
-- **Unified Directory Scope**: The "Management Users" tab will be upgraded to **"User & Access Management"**, featuring segmented tabs to filter by `All Users`, `Customers`, `Management`, and `Administrators`, with instant search and status indicators.
-- **Safety Self-Demotion Guard**: The system prevents the currently logged-in administrator from demoting or revoking their own active Admin account, preventing lockouts.
-- **Database Synchronization**: Role mutations update `public.users.role` in Supabase with automatic real-time propagation across active sessions.
+- **Confirmed Refund Tier Schedule**:
+  - **$\ge 7$ Days Before Check-in**: 100% Full Refund (0% cancellation fee)
+  - **3 to 6 Days Before Check-in**: 75% Partial Refund (25% hotel retention fee)
+  - **1 to 2 Days Before Check-in**: 50% Standard Refund (50% hotel retention fee)
+  - **$< 24$ Hours / Same-Day**: 25% Courtesy Refund (75% retention fee)
+- **Cancellation Action Placement**:
+  - Prominently visualized inside the **Digital Stay Voucher & Folio modal** via an interactive cancellation bar and button.
+  - Also available on active booking cards for direct access.
+- **Cross-Role Database Synchronization**:
+  - Mutates `public.bookings` in Supabase with `booking_status: 'Cancelled'`, `payment_status: 'Refunded'`, and stores the computed `refund_amount`.
+  - Instantly refreshes Customer, Management, and Admin dashboards without page reloads.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Enables administrators to supervise the complete hotel user roster in one place. Admins can view customer and staff accounts, inspect their registration details and activity, and change any user's role between **Customer**, **Management**, and **Admin** via a dedicated confirmation modal.
-- **Target Audience / Persona**: Hotel General Managers and System Administrators managing personnel clearances, customer escalations, and front-desk operator onboarding.
-- **Key Value**: Eliminates the disconnect between separate customer and management lists. Provides an intuitive, secure governance workflow to grant management privileges or revoke access without manual database queries.
+- **What It Does**: Replaces static cancellation blockages with an automated, fair cancellation and refund system. Guests opening their booking voucher can review their stay details, click **"Cancel Reservation"**, inspect the dynamic refund breakdown based on arrival lead time, and confirm cancellation with live Supabase persistence.
+- **Target Audience / Persona**:
+  - **Customers**: Can cancel stays flexibly with clear financial expectations and instant confirmation.
+  - **Management**: Immediately sees cancelled rooms returned to available inventory, preventing unnecessary check-in preparations.
+  - **Admin**: Views live financial reconciliation (collected revenue vs. processed refunds) and accurate cancellation rates.
+- **Key Value**: Eliminates guest frustration, adheres to modern hospitality standards, and maintains database integrity across all three user roles.
 
 ---
 
@@ -28,81 +36,119 @@ Expand the Admin panel's user management module from a management-only list into
 
 ### Key User Flows
 
-1. **Browsing & Filtering the Directory**:
-   - Admin navigates to the User & Access Management console.
-   - Admin views summary counts across `All Users`, `Customers`, `Management Staff`, and `Administrators`.
-   - Admin can search by name, email, phone, or Customer ID, or toggle quick role filter tabs.
-2. **Changing User Role (Action Modal)**:
-   - Admin clicks **Change Role** (`ShieldCheck` icon) on any user row.
-   - The **"Modify User Access & Role Clearance"** modal opens with:
-     - User Identity card (Avatar, Full Name, Email, Registration Date).
-     - Current Role badge and Target Role selection cards (Customer, Management, Admin) explaining granted permissions.
-     - Confirmation note detailing the change.
-   - Admin confirms the change:
-     - The modal shows a loading spinner during the Supabase mutation.
-     - A green success banner confirms: *"User role for [Name] successfully changed to [New Role]"*.
-     - The directory table and summary badges update immediately via Supabase Realtime.
+1. **Viewing Voucher & Initiating Cancellation**:
+   - Customer navigates to **My Bookings**.
+   - Clicks **"View Voucher"** on any confirmed reservation.
+   - The Digital Voucher displays a prominent **"Cancellation & Refund Option"** action strip in the footer alongside a quick summary of the applicable refund percentage.
+   - Clicking **"Cancel Reservation"** opens the **Cancellation & Refund Settlement Modal**.
 
-### Visual Identity & Theme
-- **Role Tier Representation**:
-  - `Admin`: Rose accent (`text-rose-700 bg-rose-50 border-rose-200`) denoting system authority.
-  - `Management`: Blue accent (`text-blue-700 bg-blue-50 border-blue-200`) denoting hotel operations.
-  - `Customer`: Emerald accent (`text-emerald-700 bg-emerald-50 border-emerald-200`) denoting verified guest status.
-- **Design Restraint**: Adheres to zero-pill typography and clear structural card hierarchy. Interactive controls use clean segmented button groups.
+2. **Refund Calculation & Confirmation Modal**:
+   - Computes days remaining until check-in:
+     $$\text{Days Remaining} = \left\lceil \frac{T_{\text{check-in}} - T_{\text{today}}}{86,400,000} \right\rceil$$
+   - Displays a structured financial folio breakdown:
+     - Original Amount Paid (e.g. ₹12,540)
+     - Days to Check-in & Applied Tier (e.g. 5 days remaining $\rightarrow$ 75% Refund Tier)
+     - Hotel Service Retention Fee (25% = ₹3,135)
+     - **Net Refund Amount to Customer (75% = ₹9,405)**
+     - Payment Refund Destination: *"Credited back to originating Razorpay payment instrument"*
+   - Reason for cancellation dropdown (e.g., *Change of Travel Dates*, *Personal Emergency*, *Flight Rescheduled*, *Other*).
+   - Customer clicks **"Confirm & Process Refund"**.
+
+3. **Multi-Role Live Reaction**:
+   - **Customer**: Booking immediately shifts from "Upcoming/All" to the "Cancelled" tab with a `Cancelled` status badge and refund receipt details.
+   - **Management**: The reservation reflects as `Cancelled` in Operations Bookings, room keycard unassigns, and occupancy metric recalculates.
+   - **Admin**: Master Bookings Ledger updates to `Cancelled`, refund amounts log into the financial analytics, and cancellation risk tracking recalculates.
+
+### Visual Styling & Layout
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│  Cancel Reservation & Refund Breakdown                                │
+├────────────────────────────────────────────────────────────────────────┤
+│  Booking Reference: BKG-NDU-778901 · Executive Business Suite          │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │ Check-In: 2026-11-04  ·  Days Remaining: 7 Days (100% Tier)     │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
+│  Financial Settlement:                                                 │
+│    Total Paid (Razorpay):                          ₹12,540             │
+│    Cancellation Retention Fee (0%):                     ₹0             │
+│    ───────────────────────────────────────────────────────             │
+│    Net Refund Payable:                             ₹12,540             │
+│                                                                        │
+│  Reason for Cancellation:                                              │
+│  [ Change of travel plans / scheduling conflict                 ▼ ]   │
+│                                                                        │
+│  [ Keep Reservation ]                   [ Confirm Cancellation & Refund ]
+└────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Modal Confirmation vs. Instant Row Select**:
-  - *Chosen Approach*: An interactive Modal dialog showing clear explanations of permissions for each tier.
-  - *Why*: Changing an account to Admin or Management grants access to sensitive financial, booking, and operational controls. A deliberate confirmation step prevents accidental permission escalation.
-- **Single Source of Truth (`public.users`)**:
-  - *Chosen Approach*: Update `role` directly on the canonical `public.users` table in Supabase.
-  - *Why*: `public.users` is already checked on login and session restoration by `AuthContext`. Updating this field ensures immediate role enforcement on next refresh or live session re-verification.
+- **Decision 1: Continuous Day-Based Tiered Refund vs. Strict 48-Hour Hard Cutoff**:
+  - *Chosen Approach*: Replace the `<48h` lockout with progressive tiers (100% $\ge 7$ days, 75% 3–6 days, 50% 1–2 days, 25% $< 24$ hours).
+  - *Why*: Provides guests with partial recourse even close to check-in while protecting hotel revenue with reasonable retention fees.
+- **Decision 2: Dual Entry Points (Voucher Modal + Booking Card)**:
+  - *Chosen Approach*: Place the primary cancellation trigger inside the **View Voucher** modal (as explicitly requested) while also providing a secondary direct button on the card.
+  - *Why*: Guests examining the voucher have full context of room details, policy, and payment method before proceeding.
+- **Decision 3: Atomic Multi-Role State Invalidation**:
+  - *Chosen Approach*: Mutate both remote Supabase `public.bookings` and local state caches, followed by an immediate multi-entity context refresh (`refreshAllData()`).
+  - *Why*: Ensures that if an Admin or Manager is logged in on another screen, their queries reflect the cancellation and updated room occupancy instantly.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy
 
-### System Component & Data Flow Diagram
-
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        Admin Web Client                                │
+│                           USER INTERFACES                              │
 │                                                                        │
-│  ┌────────────────────────┐         ┌───────────────────────────────┐  │
-│  │ User Directory Table   │ ──────> │ Role Modification Modal       │  │
-│  │ (Search, Filter Tabs,  │         │ (Preview, Permission Details, │  │
-│  │  Paginated Rows)       │         │  Confirm / Cancel Handler)    │  │
-│  └────────────────────────┘         └───────────────┬───────────────┘  │
-│              ▲                                      │                  │
-└──────────────┼──────────────────────────────────────┼──────────────────┘
-               │                                      │
-               │ State Invalidation & Realtime Sync   │ supabase.from('users')
-               │ (postgres_changes on public.users)   │ .update({ role })
-               ▼                                      ▼
+│  [ Customer: My Bookings ]   [ Management: Bookings ]   [ Admin: Ledger ]
+│         │                               │                      │       │
+│   (View Voucher)                        │                      │       │
+│         ▼                               │                      │       │
+│  [ Voucher Modal ]                      │                      │       │
+│         │                               │                      │       │
+│   (Cancel Click)                        │                      │       │
+│         ▼                               │                      │       │
+│  [ Refund Breakdown Modal ]             │                      │       │
+│         │                               │                      │       │
+│   (Confirm Action)                      │                      │       │
+└─────────┼───────────────────────────────┴──────────────────────┴───────┘
+          │
+          ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        Supabase PostgreSQL                             │
-│                                                                        │
-│  ┌────────────────────────┐         ┌───────────────────────────────┐  │
-│  │ public.users           │ <====== │ public.customers              │  │
-│  │ (id, email, full_name, │         │ (linked customer profile,     │  │
-│  │  role: admin|mgmt|cust)│         │  address, KYC details)        │  │
-│  └────────────────────────┘         └───────────────────────────────┘  │
+│                        HOTEL CONTEXT ENGINE                            │
+│  • calculateRefund(booking, checkInDate): { refund, fee, tier, days }  │
+│  • cancelBookingWithRefund(bookingId, refundDetails)                   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                      SUPABASE POSTGRESQL LAYER                         │
+│  UPDATE public.bookings                                                │
+│  SET booking_status = 'Cancelled',                                     │
+│      payment_status = 'Refunded',                                      │
+│      refund_amount = $refund,                                          │
+│      cancellation_reason = $reason,                                    │
+│      updated_at = NOW()                                                │
+│  WHERE booking_reference = $ref OR id = $id                            │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Interactive State & Component Mapping
+### Component & State Changes
 
-1. **`HotelContext.tsx` Extension**:
-   - Add `allUsers: UserProfile[]` state and `updateUserRole(userId: string, newRole: UserRole): Promise<void>`.
-   - Update `refreshAllData` to fetch all records from `public.users` (`SELECT * FROM users ORDER BY created_at DESC`).
-   - Wire `postgres_changes` on `public.users` to automatically refresh users.
-2. **`AdminManagementUsers.tsx` Transformation**:
-   - Rename / extend to comprehensive user management view.
-   - Filter segmented buttons: `All (N)`, `Customers (N)`, `Management (N)`, `Admins (N)`.
-   - Action Modal dialog state: `selectedUserForRoleChange`, `targetRole`, `isSubmitting`, `feedbackMessage`.
-   - Prevent demoting current admin's own ID (`currentUserId === user.id`).
-3. **Sidebar / Navigation Label**:
-   - Update navigation label from *"Management Users"* to *"User Directory & Roles"*.
+1. **`src/types/hotel.ts`**:
+   - Add `refundAmount?: number`, `cancellationFee?: number`, `cancellationReason?: string`, `cancelledAt?: string` to the `Booking` interface.
+2. **`src/lib/supabase.ts` & `src/context/HotelContext.tsx`**:
+   - Expand `cancelBookingInDatabase` and `cancelBooking` to accept structured refund details and persist them into Supabase.
+   - Implement `calculateRefundTier(checkInDate: string, totalAmount: number)` utility.
+3. **`src/components/customer/CustomerMyBookings.tsx`**:
+   - Remove `<span className="... text-slate-400">Cancellation deadline elapsed (<48h)</span>`.
+   - Add the cancellation action inside the **Digital Stay Voucher & Folio modal**.
+   - Build the **Cancellation & Refund Confirmation Modal** with interactive reason selector and detailed rupee breakdown.
+4. **`src/components/admin/AdminBookings.tsx` & `src/components/management/ManagementBookings.tsx`**:
+   - Verify that cancelled bookings show the `Cancelled` badge and display refund details where applicable.

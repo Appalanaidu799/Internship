@@ -63,7 +63,15 @@ interface HotelContextType {
   updateRoomType: (id: string, updated: Partial<RoomType>) => void;
   deleteRoomType: (id: string) => void;
   addRoom: (room: Omit<Room, 'id'>) => void;
-  cancelBooking: (bookingId: string) => Promise<void>;
+  cancelBooking: (
+    bookingId: string,
+    refundDetails?: {
+      refundAmount?: number;
+      cancellationFee?: number;
+      cancellationReason?: string;
+      refundPercentage?: number;
+    }
+  ) => Promise<void>;
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
   createCustomerBooking: (bookingData: {
     roomTypeId: string;
@@ -508,14 +516,31 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const cancelBooking = async (bookingId: string) => {
-    await cancelBookingInDatabase(bookingId, user?.id);
-    setBookings(prev =>
-      prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status: 'Cancelled' } : b))
-    );
-    setCustomerBookings(prev =>
-      prev.map(b => (b.id === bookingId || b.bookingReference === bookingId ? { ...b, status: 'Cancelled' } : b))
-    );
+  const cancelBooking = async (
+    bookingId: string,
+    refundDetails?: {
+      refundAmount?: number;
+      cancellationFee?: number;
+      cancellationReason?: string;
+      refundPercentage?: number;
+    }
+  ) => {
+    await cancelBookingInDatabase(bookingId, user?.id, refundDetails);
+    const cancelledTimestamp = new Date().toISOString();
+    const updateFn = (b: Booking) => {
+      if (b.id === bookingId || b.bookingReference === bookingId) {
+        return {
+          ...b,
+          status: 'Cancelled' as BookingStatus,
+          paymentStatus: 'Refunded' as const,
+          cancelledAt: cancelledTimestamp,
+          ...(refundDetails || {})
+        };
+      }
+      return b;
+    };
+    setBookings(prev => prev.map(updateFn));
+    setCustomerBookings(prev => prev.map(updateFn));
     refreshAllData();
   };
 

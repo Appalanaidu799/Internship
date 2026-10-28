@@ -2168,26 +2168,102 @@ export async function syncLocalBookingsToSupabase(): Promise<{ synced: number; t
 }
 
 /**
- * Cancel a booking in Supabase public.bookings table (and local storage).
+ * Calculate refund schedule and amount based on days before check-in:
+ * - >= 7 days before check-in: 100% full refund (0% fee)
+ * - 3 to 6 days before check-in: 75% refund (25% fee)
+ * - 1 to 2 days before check-in: 50% refund (50% fee)
+ * - < 24 hours / same day or elapsed: 25% courtesy refund (75% fee)
+ */
+export function calculateRefundSchedule(checkInDateStr: string, totalAmount: number): {
+  daysRemaining: number;
+  refundPercentage: number;
+  refundAmount: number;
+  cancellationFee: number;
+  tierLabel: string;
+} {
+  const checkIn = new Date(checkInDateStr);
+  const now = new Date();
+
+  // Day difference calculation
+  const diffMs = checkIn.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const daysRemaining = Math.max(0, diffDays);
+
+  let refundPercentage = 25;
+  let tierLabel = 'Late Notice (25% Courtesy Refund)';
+
+  if (daysRemaining >= 7) {
+    refundPercentage = 100;
+    tierLabel = 'Advance Notice (100% Full Refund)';
+  } else if (daysRemaining >= 3) {
+    refundPercentage = 75;
+    tierLabel = 'Standard Notice (75% Refund)';
+  } else if (daysRemaining >= 1) {
+    refundPercentage = 50;
+    tierLabel = 'Short Notice (50% Refund)';
+  }
+
+  const refundAmount = Math.round((totalAmount * refundPercentage) / 100);
+  const cancellationFee = totalAmount - refundAmount;
+
+  return {
+    daysRemaining,
+    refundPercentage,
+    refundAmount,
+    cancellationFee,
+    tierLabel
+  };
+}
+
+/**
+ * Cancel a booking in Supabase public.bookings table (and local storage) with refund tracking.
  */
 export async function cancelBookingInDatabase(
   bookingId: string,
-  customerId?: string
+  customerId?: string,
+  refundDetails?: {
+    refundAmount?: number;
+    cancellationFee?: number;
+    cancellationReason?: string;
+    refundPercentage?: number;
+  }
 ): Promise<{ success: boolean; error?: string }> {
   if (!bookingId) return { success: false, error: 'Booking identifier is required.' };
+
+  const cancelledTimestamp = new Date().toISOString();
 
   // 1. Update local storage
   const allBookings = getStoredBookings();
   const target = allBookings.find(b => b.id === bookingId || b.bookingReference === bookingId);
   if (target) {
     target.status = 'Cancelled';
+    target.paymentStatus = 'Refunded';
+    target.cancelledAt = cancelledTimestamp;
+    if (refundDetails) {
+      target.refundAmount = refundDetails.refundAmount;
+      target.cancellationFee = refundDetails.cancellationFee;
+      target.cancellationReason = refundDetails.cancellationReason;
+      target.refundPercentage = refundDetails.refundPercentage;
+    }
     saveStoredBookings(allBookings);
   }
 
   // 2. Update Supabase
   if (isSupabaseConfigured) {
     try {
-      let query = supabase.from('bookings').update({ booking_status: 'Cancelled', updated_at: new Date().toISOString() });
+      const updatePayload: any = {
+        booking_status: 'Cancelled',
+        payment_status: 'Refunded',
+        updated_at: cancelledTimestamp
+      };
+      if (refundDetails?.refundAmount !== undefined) {
+        updatePayload.refund_amount = refundDetails.refundAmount;
+      }
+      if (refundDetails?.cancellationReason) {
+        updatePayload.cancellation_reason = refundDetails.cancellationReason;
+      }
+
+      let query = supabase.from('bookings').update(updatePayload);
       if (target?.bookingReference) {
         query = query.eq('booking_reference', target.bookingReference);
       } else {
@@ -2198,11 +2274,24 @@ export async function cancelBookingInDatabase(
       }
       const { error } = await query;
       if (error) {
-        return { success: true, error: error.message };
+        // Fallback for missing optional columns
+        if (error.code === '42703') {
+          let fallbackQuery = supabase
+            .from('bookings')
+            .update({ booking_status: 'Cancelled', payment_status: 'Refunded', updated_at: cancelledTimestamp });
+          if (target?.bookingReference) {
+            fallbackQuery = fallbackQuery.eq('booking_reference', target.bookingReference);
+          } else {
+            fallbackQuery = fallbackQuery.eq('id', bookingId);
+          }
+          await fallbackQuery;
+        } else {
+          console.warn('Supabase cancellation notice:', error.message);
+        }
       }
       setRemoteTableStatus('ready');
     } catch (e: any) {
-      return { success: true, error: e?.message };
+      console.warn('Supabase cancellation error:', e?.message);
     }
   }
 

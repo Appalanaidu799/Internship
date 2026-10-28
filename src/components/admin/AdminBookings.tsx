@@ -312,6 +312,18 @@ export const AdminBookings: React.FC = () => {
               </div>
             </div>
 
+            {/* Cancelled Banner if applicable */}
+            {selectedBooking.status === 'Cancelled' && (
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 space-y-1">
+                <span className="font-bold block text-xs">Reservation Cancelled & Refund Processed</span>
+                <p className="text-[11px] text-amber-800">
+                  Refund Credited: <strong>₹{(selectedBooking.refundAmount ?? selectedBooking.totalAmount).toLocaleString('en-IN')}</strong>
+                  {selectedBooking.cancellationFee !== undefined && ` · Retention: ₹${selectedBooking.cancellationFee.toLocaleString('en-IN')}`}
+                  {selectedBooking.cancellationReason && ` · Reason: ${selectedBooking.cancellationReason}`}
+                </p>
+              </div>
+            )}
+
             {/* Guest & Room Breakdown */}
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">

@@ -564,7 +564,7 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
       title={isSuccess ? 'Reservation Confirmed & Saved' : `Reserve ${roomType.name}`}
       subtitle={
         isSuccess
-          ? 'Your booking details and guest verification are securely registered in Supabase.'
+          ? 'Your booking details and guest verification are securely registered.'
           : 'Complete guest KYC verification and stay details for hotel check-in compliance.'
       }
       maxWidth="xl"
@@ -573,7 +573,7 @@ export const CustomerBookingModal: React.FC<CustomerBookingModalProps> = ({
           <div className="flex items-center justify-between w-full">
             <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Data Synced to Supabase Database</span>
+              <span>Booking Confirmed</span>
             </span>
             <button
               onClick={handleClose}

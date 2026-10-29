@@ -129,7 +129,7 @@ export const RoleBasedAiChatbot: React.FC<RoleBasedAiChatbotProps> = ({
     let quickQuestions: string[] = [];
 
     if (role === 'admin') {
-      greeting = `Welcome Administrator ${user?.fullName || ''}. I am Aura, your Executive Strategic Intelligence Advisor for Naidu Luxury Hotel & Resort. I have real-time visibility into live Supabase booking ledgers, revenue KPIs, ADR, and predictive cancellation risk. How can I assist with your executive analysis today?`;
+      greeting = `Welcome ${user?.fullName || ''}. I am Aura, your Executive Strategic Intelligence Advisor for Naidu Luxury Hotel & Resort. I have real-time visibility into live booking ledgers, revenue KPIs, ADR, and predictive cancellation risk. How can I assist with your analysis today?`;
       quickQuestions = [
         "What is our total revenue and ADR so far?",
         "How many bookings are flagged as high cancellation risk?",

@@ -98,12 +98,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onCloseMobile();
   };
 
-  const getRoleLabel = () => {
-    if (user?.role === 'admin') return 'System Administrator';
-    if (user?.role === 'management') return 'Hotel Management';
-    return 'Guest Member';
-  };
-
   return (
     <>
       {/* Mobile Backdrop */}
@@ -132,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Luxery Hotel
               </span>
               <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono">
-                {user?.role === 'customer' ? 'Guest Portal' : 'Hotel Intelligence'}
+                Hotel Intelligence
               </span>
             </div>
           </div>
@@ -145,14 +139,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Current Active Mode / Role Indicator Banner */}
+        {/* User Account Banner */}
         <div className="px-4 py-3 mx-3 my-2.5 rounded-lg bg-slate-800/60 border border-slate-700/60 flex items-center gap-2.5 text-xs">
-          {user?.role === 'admin' && <Shield className="w-4 h-4 text-rose-400 shrink-0" />}
-          {user?.role === 'management' && <Briefcase className="w-4 h-4 text-blue-400 shrink-0" />}
-          {user?.role === 'customer' && <Hotel className="w-4 h-4 text-emerald-400 shrink-0" />}
+          <div className="w-8 h-8 rounded-full bg-blue-600/30 text-blue-300 border border-blue-500/30 flex items-center justify-center font-bold text-xs shrink-0">
+            {user?.fullName?.charAt(0) || 'U'}
+          </div>
           <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Session Role</p>
-            <p className="text-xs font-semibold text-slate-100 truncate">{getRoleLabel()}</p>
+            <p className="text-xs font-semibold text-slate-100 truncate">{user?.fullName || 'Active User'}</p>
+            <p className="text-[10px] text-slate-400 truncate">{user?.email}</p>
           </div>
         </div>
 

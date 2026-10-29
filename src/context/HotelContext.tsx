@@ -18,7 +18,11 @@ import {
   createBookingInDatabase,
   cancelBookingInDatabase,
   syncLocalBookingsToSupabase,
-  isSupabaseConfigured
+  isSupabaseConfigured,
+  getStoredRoleOverrides,
+  fetchServerRoleOverrides,
+  persistRoleChange,
+  deduplicateBookingsById
 } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { Role, UserProfile } from '../types/auth';
@@ -120,7 +124,7 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [roomTypes, setRoomTypes] = useState<RoomType[]>(() => getStoredRoomTypes());
   const [rooms, setRooms] = useState<Room[]>(() => getStoredRooms());
-  const [bookings, setBookings] = useState<Booking[]>(() => getStoredBookings());
+  const [bookings, setBookings] = useState<Booking[]>(() => deduplicateBookingsById(getStoredBookings()));
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [managementUsers, setManagementUsers] = useState<ManagementUser[]>(INITIAL_MANAGEMENT_USERS);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
@@ -146,7 +150,9 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           supabase.from('users').select('*').order('created_at', { ascending: false })
         ]);
 
-        const activeBookings = Array.isArray(dbBookings) ? dbBookings : [];
+        const activeBookings = Array.isArray(dbBookings) && dbBookings.length > 0
+          ? deduplicateBookingsById(dbBookings)
+          : deduplicateBookingsById(getStoredBookings());
         setBookings(activeBookings);
 
         if (Array.isArray(dbRoomTypes) && dbRoomTypes.length > 0) {
@@ -156,20 +162,34 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setRooms(dbRooms);
         }
 
-        // 2. Map all users across roles (customer, management, admin)
+        // 2. Map all users across roles with persistent role overrides
+        const roleOverrides = { ...getStoredRoleOverrides() };
+        try {
+          const serverOverrides = await fetchServerRoleOverrides();
+          Object.assign(roleOverrides, serverOverrides);
+        } catch {}
+
         let loadedUsers: UserProfile[] = [];
         if (usersRes && Array.isArray(usersRes.data)) {
-          loadedUsers = usersRes.data.map((u: any) => ({
-            id: u.id,
-            full_name: u.full_name || u.email?.split('@')[0] || 'User',
-            email: u.email,
-            phone: u.phone || '',
-            role: (u.role || 'customer') as Role,
-            status: (u.status || 'active') as any,
-            profile_image: u.profile_image || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(u.full_name || u.email || 'User')}`,
-            created_at: u.created_at,
-            updated_at: u.updated_at
-          }));
+          loadedUsers = usersRes.data
+            .filter((u: any) => !String(u.id || '').startsWith('test-') && !String(u.email || '').includes('test17932'))
+            .map((u: any) => {
+            const overrideRole =
+              roleOverrides[u.id] ||
+              (u.email && roleOverrides[u.email.toLowerCase().trim()]);
+            const finalRole = (overrideRole || u.role || 'customer') as Role;
+            return {
+              id: u.id,
+              full_name: u.full_name || u.email?.split('@')[0] || 'User',
+              email: u.email,
+              phone: u.phone || '',
+              role: finalRole,
+              status: (u.status || 'active') as any,
+              profile_image: u.profile_image || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(u.full_name || u.email || 'User')}`,
+              created_at: u.created_at,
+              updated_at: u.updated_at
+            };
+          });
           setAllUsers(loadedUsers);
 
           // Map management accounts from all users
@@ -402,20 +422,44 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateUserRole = async (userId: string, newRole: Role): Promise<{ success: boolean; error?: string }> => {
     try {
-      // 1. Optimistic UI update
-      setAllUsers(prev => prev.map(u => (u.id === userId ? { ...u, role: newRole, updated_at: new Date().toISOString() } : u)));
+      const targetUser = allUsers.find(
+        u => u.id === userId || (u.email && u.email.toLowerCase() === userId.toLowerCase())
+      );
+      const targetEmail = targetUser?.email || '';
 
-      // 2. Persist to Supabase public.users
-      if (isSupabaseConfigured) {
-        const { error } = await supabase
-          .from('users')
-          .update({ role: newRole, updated_at: new Date().toISOString() })
-          .eq('id', userId);
+      // 1. Optimistic UI update across all users
+      setAllUsers(prev =>
+        prev.map(u =>
+          u.id === userId || (targetEmail && u.email?.toLowerCase() === targetEmail.toLowerCase())
+            ? { ...u, role: newRole, updated_at: new Date().toISOString() }
+            : u
+        )
+      );
 
-        if (error) {
-          console.warn('Notice from updating user role in Supabase:', error);
-          return { success: false, error: error.message };
-        }
+      // 2. Persist to role overrides (local storage + server disk API + Supabase)
+      await persistRoleChange(userId, targetEmail, newRole);
+
+      // 3. Immediately reflect in management roster or customer roster
+      if (newRole === 'management') {
+        setManagementUsers(prev => {
+          if (prev.some(m => m.id === userId || (targetEmail && m.email.toLowerCase() === targetEmail.toLowerCase()))) {
+            return prev;
+          }
+          const newMgmt: ManagementUser = {
+            id: userId,
+            fullName: targetUser?.full_name || 'Staff Member',
+            email: targetEmail,
+            status: 'Active',
+            createdAt: new Date().toISOString().split('T')[0],
+            lastLogin: 'Active session',
+            department: 'Operations & Management'
+          };
+          return [newMgmt, ...prev];
+        });
+      } else {
+        setManagementUsers(prev =>
+          prev.filter(m => m.id !== userId && (!targetEmail || m.email.toLowerCase() !== targetEmail.toLowerCase()))
+        );
       }
 
       await refreshAllData();
@@ -428,15 +472,31 @@ export const HotelProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteUserAccount = async (userId: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      setAllUsers(prev => prev.filter(u => u.id !== userId));
-      setManagementUsers(prev => prev.filter(u => u.id !== userId));
-      setCustomers(prev => prev.filter(c => c.id !== userId));
+      const targetUser = allUsers.find(
+        u => u.id === userId || (u.email && u.email.toLowerCase() === userId.toLowerCase())
+      );
+      const targetEmail = targetUser?.email || '';
+
+      setAllUsers(prev =>
+        prev.filter(u => u.id !== userId && (!targetEmail || u.email?.toLowerCase() !== targetEmail.toLowerCase()))
+      );
+      setManagementUsers(prev =>
+        prev.filter(u => u.id !== userId && (!targetEmail || u.email?.toLowerCase() !== targetEmail.toLowerCase()))
+      );
+      setCustomers(prev =>
+        prev.filter(c => c.id !== userId && (!targetEmail || c.email?.toLowerCase() !== targetEmail.toLowerCase()))
+      );
+
+      if (targetEmail) {
+        deleteLocalFallbackProfile(targetEmail);
+      }
 
       if (isSupabaseConfigured) {
-        const { error } = await supabase.from('users').delete().eq('id', userId);
-        if (error) {
-          console.warn('Notice deleting user from Supabase:', error);
-          return { success: false, error: error.message };
+        try {
+          if (userId) await supabase.from('users').delete().eq('id', userId);
+          if (targetEmail) await supabase.from('users').delete().eq('email', targetEmail.toLowerCase());
+        } catch (e) {
+          console.warn('Notice deleting user from Supabase:', e);
         }
       }
 

@@ -417,7 +417,7 @@ export const CustomerProfile: React.FC = () => {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setPasswordSuccess('Account security credentials updated successfully in Supabase.');
+      setPasswordSuccess('Account security credentials updated successfully.');
       setTimeout(() => setPasswordSuccess(''), 4000);
     } catch (err: any) {
       setPasswordError(err?.message || 'Password update failed.');

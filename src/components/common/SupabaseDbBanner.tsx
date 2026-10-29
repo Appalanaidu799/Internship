@@ -83,13 +83,10 @@ export const SupabaseDbBanner: React.FC<SupabaseDbBannerProps> = ({ alwaysVisibl
           </div>
           <div>
             <div className="font-bold text-slate-900 flex items-center gap-2">
-              <span>Supabase Database Setup: Customers, Rooms & Bookings Schema</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-amber-200/60 text-amber-900 rounded font-semibold">
-                {projectRef}
-              </span>
+              <span>Database Setup: Schema & Configuration</span>
             </div>
             <p className="text-slate-600 mt-0.5">
-              The remote Supabase database requires the public schema tables (<code>users</code>, <code>customers</code>, <code>room_types</code>, <code>rooms</code>, <code>bookings</code>). Copy the idempotent SQL script and execute it in your Supabase SQL Editor.
+              The database requires the schema tables (<code>users</code>, <code>customers</code>, <code>room_types</code>, <code>rooms</code>, <code>bookings</code>). Copy the idempotent SQL script and execute it in your SQL Editor.
             </p>
             {statusMsg && (
               <p className={`mt-1 font-semibold ${statusMsg.includes('active') ? 'text-emerald-700' : 'text-amber-800'}`}>
@@ -125,7 +122,7 @@ export const SupabaseDbBanner: React.FC<SupabaseDbBannerProps> = ({ alwaysVisibl
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition-colors shadow-xs"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>Open Supabase SQL Editor</span>
+            <span>Open SQL Editor</span>
           </a>
 
           <button
@@ -135,7 +132,7 @@ export const SupabaseDbBanner: React.FC<SupabaseDbBannerProps> = ({ alwaysVisibl
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-semibold transition-colors shadow-xs disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isVerifying ? 'animate-spin' : ''}`} />
-            <span>{isVerifying ? 'Verifying & Syncing...' : 'Verify & Sync Bookings to Supabase'}</span>
+            <span>{isVerifying ? 'Verifying...' : 'Verify Database'}</span>
           </button>
 
           {!alwaysVisible && (
@@ -154,7 +151,7 @@ export const SupabaseDbBanner: React.FC<SupabaseDbBannerProps> = ({ alwaysVisibl
       {isExpanded && (
         <div className="max-w-7xl mx-auto mt-3 p-3 bg-slate-900 text-slate-200 rounded-xl font-mono text-[11px] overflow-x-auto shadow-inner border border-slate-800">
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-            <span className="text-slate-400">PostgreSQL Schema & Seed Rows for Supabase:</span>
+            <span className="text-slate-400">PostgreSQL Schema & Seed Rows:</span>
             <button
               type="button"
               onClick={handleCopySql}

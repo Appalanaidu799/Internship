@@ -14,16 +14,20 @@ import {
 import { useHotel } from '../../context/HotelContext';
 import { ChartCard, TrendLineChart, RiskDonutChart, HorizontalBarChart } from '../common/ChartCard';
 import { RiskBadge } from '../common/RiskBadge';
+import { deduplicateBookingsById } from '../../lib/supabase';
 
 export const AdminCancellationPrediction: React.FC = () => {
   const { bookings } = useHotel();
   const [selectedMitigation, setSelectedMitigation] = useState<string | null>(null);
   const [dispatchedMessage, setDispatchedMessage] = useState('');
 
-  const totalEvaluated = bookings.length;
-  const highRisk = bookings.filter(b => b.cancellationRisk === 'HIGH');
-  const mediumRisk = bookings.filter(b => b.cancellationRisk === 'MEDIUM');
-  const lowRisk = bookings.filter(b => b.cancellationRisk === 'LOW');
+  // Distinct Bookings by booking ID / bookingReference
+  const distinctBookings = useMemo(() => deduplicateBookingsById(bookings), [bookings]);
+
+  const totalEvaluated = distinctBookings.length;
+  const highRisk = distinctBookings.filter(b => b.cancellationRisk === 'HIGH');
+  const mediumRisk = distinctBookings.filter(b => b.cancellationRisk === 'MEDIUM');
+  const lowRisk = distinctBookings.filter(b => b.cancellationRisk === 'LOW');
 
   const predictedCancellations = highRisk.length + Math.round(mediumRisk.length * 0.4);
   const cancellationRate = totalEvaluated > 0 ? ((predictedCancellations / totalEvaluated) * 100).toFixed(1) : '0.0';
@@ -37,11 +41,11 @@ export const AdminCancellationPrediction: React.FC = () => {
     }, 4000);
   };
 
-  // Real monthly trend
+  // Real monthly trend from distinct bookings
   const monthlyTrends = useMemo(() => {
-    if (bookings.length === 0) return [];
+    if (distinctBookings.length === 0) return [];
     const map = new Map<string, { bookings: number; cancellations: number }>();
-    bookings.forEach(b => {
+    distinctBookings.forEach(b => {
       const d = new Date(b.checkIn || b.createdAt);
       const label = !isNaN(d.getTime()) ? d.toLocaleString('en-US', { month: 'short' }) : 'Active';
       const curr = map.get(label) || { bookings: 0, cancellations: 0 };
@@ -54,7 +58,7 @@ export const AdminCancellationPrediction: React.FC = () => {
       primary: val.bookings,
       secondary: val.cancellations
     }));
-  }, [bookings]);
+  }, [distinctBookings]);
 
   // Lead time correlation from real data
   const leadTimeStats = useMemo(() => {
@@ -265,7 +269,7 @@ export const AdminCancellationPrediction: React.FC = () => {
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[10px] tracking-wider">
               <tr>
                 <th className="py-3 px-4">Booking ID</th>
-                <th className="py-3 px-4">Customer</th>
+                <th className="py-3 px-4">Guest</th>
                 <th className="py-3 px-4">Room Type</th>
                 <th className="py-3 px-4">Lead Time</th>
                 <th className="py-3 px-4">Payment</th>

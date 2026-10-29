@@ -43,28 +43,6 @@ export const Header: React.FC<HeaderProps> = ({
     onSearchChange?.(e.target.value);
   };
 
-  const getRoleBadge = (role: UserRole) => {
-    switch (role) {
-      case 'admin':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-            <ShieldCheck className="w-3 h-3" /> Admin
-          </span>
-        );
-      case 'management':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-            <Briefcase className="w-3 h-3" /> Management
-          </span>
-        );
-      case 'customer':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <Users className="w-3 h-3" /> Customer
-          </span>
-        );
-    }
-  };
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xs border-b border-slate-200 px-4 sm:px-6 py-3 transition-colors">
@@ -105,13 +83,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: Actions, Notifications, Database Role & User Profile */}
+        {/* Right: Actions, Notifications, User Profile */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Verified Role from Supabase public.users */}
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 rounded-lg border border-slate-200 text-xs">
-            <span className="text-[11px] text-slate-500 font-medium">Role:</span>
-            {user && getRoleBadge(user.role)}
-          </div>
 
           {/* Notifications Button & Dropdown */}
           <div className="relative">
@@ -172,10 +145,6 @@ export const Header: React.FC<HeaderProps> = ({
                       </span>
                     </div>
                   )}
-                  <div className="mt-2 flex items-center gap-2">
-                    {user && getRoleBadge(user.role)}
-                    <span className="text-[10px] text-slate-400 font-mono">public.customers</span>
-                  </div>
                 </div>
 
                 <div className="py-1">
@@ -186,7 +155,7 @@ export const Header: React.FC<HeaderProps> = ({
                       setSyncFeedback('');
                       try {
                         await refreshProfile();
-                        setSyncFeedback('Synced!');
+                        setSyncFeedback('Refreshed');
                         setTimeout(() => setSyncFeedback(''), 2000);
                       } catch {
                         setSyncFeedback('Failed');
@@ -199,7 +168,7 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <span className="flex items-center gap-2">
                       <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isSyncing ? 'animate-spin' : ''}`} />
-                      <span>Sync Role from DB</span>
+                      <span>Refresh</span>
                     </span>
                     {syncFeedback && (
                       <span className="text-[10px] text-emerald-600 font-semibold">{syncFeedback}</span>

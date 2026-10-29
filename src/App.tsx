@@ -124,7 +124,10 @@ const AppContent: React.FC = () => {
       return (
         <RegisterPage
           onNavigateToLogin={() => setAuthView('login')}
-          onSuccess={() => enforceRouteProtection()}
+          onSuccess={() => {
+            setAuthView('login');
+            enforceRouteProtection();
+          }}
         />
       );
     }
@@ -368,7 +371,7 @@ const AppContent: React.FC = () => {
           <div className="flex items-center gap-4 text-slate-400">
             <span>AI-Powered Hotel Intelligence</span>
             <span>·</span>
-            <span className="font-mono">Supabase Role-Enforced Security</span>
+            <span>Secure System</span>
           </div>
         </footer>
       </div>

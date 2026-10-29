@@ -18,25 +18,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
-  const [isEmailUnconfirmed, setIsEmailUnconfirmed] = useState(false);
-  const [resendStatus, setResendStatus] = useState<{ loading: boolean; message?: string }>({ loading: false });
-
-  const handleResendConfirmation = async () => {
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail) {
-      setErrorMessage('Please enter your email address to resend confirmation.');
-      return;
-    }
-    setResendStatus({ loading: true });
-    const res = await resendConfirmationEmail(cleanEmail);
-    setResendStatus({ loading: false, message: res.message });
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
-    setIsEmailUnconfirmed(false);
-    setResendStatus({ loading: false });
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
@@ -61,9 +46,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     if (res.success) {
       onSuccess();
     } else {
-      if (res.isEmailUnconfirmed) {
-        setIsEmailUnconfirmed(true);
-      }
       setErrorMessage(res.error || 'Authentication failed. Please verify your credentials.');
     }
   };
@@ -93,41 +75,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
         {/* Card */}
         <div className="mt-7 bg-white py-8 px-6 sm:px-10 shadow-2xl rounded-2xl border border-slate-100">
-          {/* Email Unconfirmed Notification */}
-          {isEmailUnconfirmed && (
-            <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs space-y-2.5 animate-in fade-in duration-200">
-              <div className="flex items-start gap-2.5">
-                <Mail className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-bold text-amber-900">Email Confirmation Required</h4>
-                  <p className="mt-1 text-amber-800 leading-relaxed text-[11px]">
-                    Your account exists, but your email has not been verified yet. Please click the confirmation link sent to your inbox.
-                  </p>
-                </div>
-              </div>
-
-              {resendStatus.message && (
-                <div className="p-2 rounded-lg bg-white border border-amber-200 text-amber-900 text-[11px] font-medium flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span>{resendStatus.message}</span>
-                </div>
-              )}
-
-              <div className="pt-1">
-                <button
-                  type="button"
-                  disabled={resendStatus.loading}
-                  onClick={handleResendConfirmation}
-                  className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
-                >
-                  {resendStatus.loading ? 'Sending link...' : 'Resend Confirmation Email'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Standard Error Message */}
-          {errorMessage && !isEmailUnconfirmed && (
+          {/* Error Message */}
+          {errorMessage && (
             <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2 animate-in fade-in duration-200">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{errorMessage}</span>
@@ -217,7 +166,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
 
           {/* Registration link */}
           <div className="mt-6 pt-5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>New customer?</span>
+            <span>New guest?</span>
             <button
               type="button"
               onClick={onNavigateToRegister}

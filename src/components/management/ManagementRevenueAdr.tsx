@@ -3,32 +3,36 @@ import { DollarSign, TrendingUp, Percent, BarChart3, CreditCard, Sparkles, Calen
 import { useHotel } from '../../context/HotelContext';
 import { KpiCard } from '../common/KpiCard';
 import { ChartCard, TrendLineChart, HorizontalBarChart } from '../common/ChartCard';
+import { deduplicateBookingsById } from '../../lib/supabase';
 
 export const ManagementRevenueAdr: React.FC = () => {
   const { bookings, rooms, roomTypes } = useHotel();
 
-  const totalBookings = bookings.length;
-  const actualCollectedRevenue = bookings
+  // Distinct Bookings Calculation (deduplicated strictly by booking ID / bookingReference)
+  const distinctBookings = useMemo(() => deduplicateBookingsById(bookings), [bookings]);
+
+  const totalBookings = distinctBookings.length;
+  const actualCollectedRevenue = distinctBookings
     .filter(b => b.paymentStatus === 'Paid' && b.status !== 'Cancelled')
     .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
-  const pendingRevenue = bookings
+  const pendingRevenue = distinctBookings
     .filter(b => b.paymentStatus === 'Pending' && b.status !== 'Cancelled')
     .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
-  const avgAdr = totalBookings > 0 ? Math.round(bookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookings) : 0;
+  const avgAdr = totalBookings > 0 ? Math.round(distinctBookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookings) : 0;
   const totalRooms = rooms.length;
   const revPar = totalRooms > 0 ? Math.round(actualCollectedRevenue / totalRooms) : 0;
 
-  const totalNights = bookings.filter(b => b.status !== 'Cancelled').reduce((sum, b) => sum + (b.nights || 1), 0);
-  const activeBookingsCount = bookings.filter(b => b.status !== 'Cancelled').length;
+  const totalNights = distinctBookings.filter(b => b.status !== 'Cancelled').reduce((sum, b) => sum + (b.nights || 1), 0);
+  const activeBookingsCount = distinctBookings.filter(b => b.status !== 'Cancelled').length;
   const alos = activeBookingsCount > 0 ? (totalNights / activeBookingsCount).toFixed(1) : '0.0';
 
-  // Dynamic ADR pace trend from real data
+  // Dynamic ADR pace trend from distinct bookings
   const monthlyAdrTrend = useMemo(() => {
-    if (bookings.length === 0) return [];
+    if (distinctBookings.length === 0) return [];
     const map = new Map<string, { totalAdr: number; count: number }>();
-    bookings.forEach(b => {
+    distinctBookings.forEach(b => {
       const d = new Date(b.checkIn || b.createdAt);
       const label = !isNaN(d.getTime()) ? d.toLocaleString('en-US', { month: 'short' }) : 'Active';
       const curr = map.get(label) || { totalAdr: 0, count: 0 };

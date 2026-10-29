@@ -17,6 +17,7 @@ import { ChartCard, TrendLineChart, RiskDonutChart, HorizontalBarChart } from '.
 import { RiskBadge } from '../common/RiskBadge';
 import { StatusBadge } from '../common/StatusBadge';
 import { useHotel } from '../../context/HotelContext';
+import { deduplicateBookingsById } from '../../lib/supabase';
 
 interface ManagementDashboardOverviewProps {
   onNavigateTab: (tabId: string) => void;
@@ -27,32 +28,35 @@ export const ManagementDashboardOverview: React.FC<ManagementDashboardOverviewPr
 }) => {
   const { bookings, rooms, roomTypes, insights } = useHotel();
 
-  // Management calculations
-  const totalBookings = bookings.length;
-  const cancelledBookings = bookings.filter(b => b.status === 'Cancelled').length;
+  // Distinct Bookings Calculation (deduplicated strictly by booking ID / bookingReference)
+  const distinctBookings = useMemo(() => deduplicateBookingsById(bookings), [bookings]);
+
+  // Management calculations from distinct bookings
+  const totalBookings = distinctBookings.length;
+  const cancelledBookings = distinctBookings.filter(b => b.status === 'Cancelled').length;
   const occupiedRooms = rooms.filter(r => r.status === 'Occupied').length;
   const totalRooms = rooms.length;
   const occupancyRate = totalRooms > 0 ? ((occupiedRooms / totalRooms) * 100).toFixed(1) : '0.0';
   const cancellationRate = totalBookings > 0 ? ((cancelledBookings / totalBookings) * 100).toFixed(1) : '0.0';
-  const avgAdr = totalBookings > 0 ? Math.round(bookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookings) : 0;
+  const avgAdr = totalBookings > 0 ? Math.round(distinctBookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookings) : 0;
 
-  const actualCollectedRevenue = bookings
+  const actualCollectedRevenue = distinctBookings
     .filter(b => b.paymentStatus === 'Paid' && b.status !== 'Cancelled')
     .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
-  const pendingRevenue = bookings
+  const pendingRevenue = distinctBookings
     .filter(b => b.paymentStatus === 'Pending' && b.status !== 'Cancelled')
     .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
-  const highRiskBookings = bookings.filter(b => b.cancellationRisk === 'HIGH');
-  const mediumRiskBookings = bookings.filter(b => b.cancellationRisk === 'MEDIUM');
-  const lowRiskBookings = bookings.filter(b => b.cancellationRisk === 'LOW');
+  const highRiskBookings = distinctBookings.filter(b => b.cancellationRisk === 'HIGH');
+  const mediumRiskBookings = distinctBookings.filter(b => b.cancellationRisk === 'MEDIUM');
+  const lowRiskBookings = distinctBookings.filter(b => b.cancellationRisk === 'LOW');
   const predictedCancellations = highRiskBookings.length + Math.round(mediumRiskBookings.length * 0.4);
 
-  // Dynamic monthly trend
+  // Dynamic monthly trend from distinct bookings
   const monthlyTrends = useMemo(() => {
-    if (bookings.length === 0) return [];
+    if (distinctBookings.length === 0) return [];
     const map = new Map<string, { bookings: number; cancellations: number }>();
-    bookings.forEach(b => {
+    distinctBookings.forEach(b => {
       const d = new Date(b.checkIn || b.createdAt);
       const label = !isNaN(d.getTime()) ? d.toLocaleString('en-US', { month: 'short' }) : 'Active';
       const curr = map.get(label) || { bookings: 0, cancellations: 0 };

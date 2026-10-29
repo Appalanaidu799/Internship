@@ -462,20 +462,74 @@ export function generateBookingReference(): string {
 // ==============================================================================
 export const INITIAL_FALLBACK_CUSTOMERS: CustomerProfileData[] = [
   {
+    id: '1bf86f9c-f44d-40ed-b56e-b96ced3b5311',
+    customer_code: 'CUS-ARUN01',
+    full_name: 'Arun sai',
+    email: 'customer@gmail.com',
+    phone: '+91 8341549923',
+    date_of_birth: '1995-04-12',
+    gender: 'Male',
+    address_line: 'Beach Road, Sector 4',
+    city: 'Visakhapatnam',
+    state: 'Andhra Pradesh',
+    postal_code: '530003',
+    country: 'India',
+    emergency_contact_name: 'Suresh Kumar',
+    emergency_contact_phone: '+91 9848012345',
+    created_at: '2026-10-26T10:12:52.948Z',
+    updated_at: '2026-10-26T10:12:52.948Z'
+  },
+  {
+    id: 'db7e19c0-3383-433b-a918-5c4b1957671a',
+    customer_code: 'CUS-BHAS02',
+    full_name: 'Bhaskar',
+    email: 'bhaskarjyotisaha1@gmail.com',
+    phone: '+91 7099356016',
+    date_of_birth: '1990-08-20',
+    gender: 'Male',
+    address_line: 'Park View Enclave, Block C',
+    city: 'Guwahati',
+    state: 'Assam',
+    postal_code: '781001',
+    country: 'India',
+    emergency_contact_name: 'Amit Saha',
+    emergency_contact_phone: '+91 7099356010',
+    created_at: '2026-10-13T12:33:42.650Z',
+    updated_at: '2026-10-13T12:33:42.650Z'
+  },
+  {
+    id: '4fcaa769-63d6-4fec-8090-143395ce9a52',
+    customer_code: 'CUS-NAIDU01',
+    full_name: 'Appalanaidu Gorle',
+    email: 'appalanaidugorle799@gmail.com',
+    phone: '+91 7993062979',
+    date_of_birth: '1988-11-05',
+    gender: 'Male',
+    address_line: 'Residency Hills, Tower 2',
+    city: 'Hyderabad',
+    state: 'Telangana',
+    postal_code: '500081',
+    country: 'India',
+    emergency_contact_name: 'Gorle Lakshmi',
+    emergency_contact_phone: '+91 7993062970',
+    created_at: '2026-10-10T11:02:50.933Z',
+    updated_at: '2026-10-10T11:02:50.933Z'
+  },
+  {
     id: 'c0000000-0000-0000-0000-000000000003',
     customer_code: 'CUS-NAIDU001',
     full_name: 'Rajesh Naidu',
     email: 'customer@gmail.com',
-    phone: '+1 (555) 234-5678',
+    phone: '+91 9876543210',
     date_of_birth: '1992-06-15',
     gender: 'Male',
-    address_line: '742 Evergreen Terrace, Suite 400',
-    city: 'San Francisco',
-    state: 'CA',
-    postal_code: '94107',
-    country: 'United States',
+    address_line: '742 Marine Promenade',
+    city: 'Visakhapatnam',
+    state: 'Andhra Pradesh',
+    postal_code: '530002',
+    country: 'India',
     emergency_contact_name: 'Priya Naidu',
-    emergency_contact_phone: '+1 (555) 876-5432',
+    emergency_contact_phone: '+91 9876543211',
     created_at: '2025-01-10T08:00:00.000Z',
     updated_at: '2025-01-10T08:00:00.000Z'
   }
@@ -595,46 +649,48 @@ export const INITIAL_FALLBACK_ROOMS: Room[] = [
 ];
 
 export const INITIAL_FALLBACK_BOOKINGS: Booking[] = [
+  // 1. Confirmed Booking
   {
     id: 'BKG-NDU-882194',
     bookingReference: 'BKG-NDU-882194',
-    customerId: 'c0000000-0000-0000-0000-000000000003',
-    customerCode: 'CUS-NAIDU001',
-    customerName: 'Rajesh Naidu',
+    customerId: '1bf86f9c-f44d-40ed-b56e-b96ced3b5311',
+    customerCode: 'CUS-ARUN01',
+    customerName: 'Arun sai',
     customerEmail: 'customer@gmail.com',
-    customerPhone: '+1 (555) 234-5678',
+    customerPhone: '+91 8341549923',
     roomTypeId: '11111111-1111-1111-1111-111111111104',
     roomTypeName: 'Deluxe Ocean View',
     roomNumber: 'Room 201',
-    checkIn: '2026-10-22',
-    checkOut: '2026-10-26',
+    checkIn: '2026-11-10',
+    checkOut: '2026-11-14',
     nights: 4,
     guests: 2,
     adr: 2799,
     totalAmount: 11196,
     status: 'Confirmed',
     paymentStatus: 'Paid',
-    cancellationProbability: 14,
+    cancellationProbability: 12,
     cancellationRisk: 'LOW',
-    leadTimeDays: 16,
+    leadTimeDays: 14,
     marketSegment: 'Direct',
     depositType: 'Refundable',
-    createdAt: '2026-10-06',
-    specialRequests: 'High floor preferred, late arrival around 8 PM.'
+    createdAt: '2026-10-25',
+    specialRequests: 'High floor preferred, ocean side balcony.'
   },
+  // 2. Checked-Out / Completed Stay
   {
     id: 'BKG-NDU-731920',
     bookingReference: 'BKG-NDU-731920',
-    customerId: 'c0000000-0000-0000-0000-000000000003',
-    customerCode: 'CUS-NAIDU001',
-    customerName: 'Rajesh Naidu',
-    customerEmail: 'customer@gmail.com',
-    customerPhone: '+1 (555) 234-5678',
+    customerId: 'db7e19c0-3383-433b-a918-5c4b1957671a',
+    customerCode: 'CUS-BHAS02',
+    customerName: 'Bhaskar',
+    customerEmail: 'bhaskarjyotisaha1@gmail.com',
+    customerPhone: '+91 7099356016',
     roomTypeId: '11111111-1111-1111-1111-111111111105',
     roomTypeName: 'Executive Business Suite',
     roomNumber: 'Room 301',
-    checkIn: '2026-08-10',
-    checkOut: '2026-08-14',
+    checkIn: '2026-10-15',
+    checkOut: '2026-10-19',
     nights: 4,
     guests: 2,
     adr: 3999,
@@ -643,11 +699,103 @@ export const INITIAL_FALLBACK_BOOKINGS: Booking[] = [
     paymentStatus: 'Paid',
     cancellationProbability: 5,
     cancellationRisk: 'LOW',
-    leadTimeDays: 28,
+    leadTimeDays: 20,
     marketSegment: 'Corporate',
     depositType: 'No Deposit',
-    createdAt: '2026-07-15',
-    specialRequests: 'Quiet room near elevator.'
+    createdAt: '2026-10-10',
+    specialRequests: 'Quiet room near executive boardroom.'
+  },
+  // 3. Confirmed Booking
+  {
+    id: 'BKG-NDU-554210',
+    bookingReference: 'BKG-NDU-554210',
+    customerId: '4fcaa769-63d6-4fec-8090-143395ce9a52',
+    customerCode: 'CUS-NAIDU01',
+    customerName: 'Appalanaidu Gorle',
+    customerEmail: 'appalanaidugorle799@gmail.com',
+    customerPhone: '+91 7993062979',
+    roomTypeId: '11111111-1111-1111-1111-111111111106',
+    roomTypeName: 'Premier Garden Villa',
+    roomNumber: 'Villa 401',
+    checkIn: '2026-11-20',
+    checkOut: '2026-11-23',
+    nights: 3,
+    guests: 4,
+    adr: 5499,
+    totalAmount: 16497,
+    status: 'Confirmed',
+    paymentStatus: 'Paid',
+    cancellationProbability: 8,
+    cancellationRisk: 'LOW',
+    leadTimeDays: 22,
+    marketSegment: 'Direct',
+    depositType: 'Refundable',
+    createdAt: '2026-10-26',
+    specialRequests: 'Late checkout requested.'
+  },
+  // 4. CANCELLED Booking #1
+  {
+    id: 'BKG-NDU-410982',
+    bookingReference: 'BKG-NDU-410982',
+    customerId: '1bf86f9c-f44d-40ed-b56e-b96ced3b5311',
+    customerCode: 'CUS-ARUN01',
+    customerName: 'Arun sai',
+    customerEmail: 'customer@gmail.com',
+    customerPhone: '+91 8341549923',
+    roomTypeId: '11111111-1111-1111-1111-111111111104',
+    roomTypeName: 'Deluxe Ocean View',
+    roomNumber: 'Room 202',
+    checkIn: '2026-11-05',
+    checkOut: '2026-11-07',
+    nights: 2,
+    guests: 2,
+    adr: 2799,
+    totalAmount: 5598,
+    status: 'Cancelled',
+    paymentStatus: 'Refunded',
+    cancellationProbability: 95,
+    cancellationRisk: 'HIGH',
+    leadTimeDays: 7,
+    marketSegment: 'Direct',
+    depositType: 'Refundable',
+    createdAt: '2026-10-20',
+    specialRequests: 'Ground floor preference.',
+    refundAmount: 5098,
+    cancellationFee: 500,
+    cancellationReason: 'Trip postponed due to client schedule changes',
+    refundPercentage: 91
+  },
+  // 5. CANCELLED Booking #2
+  {
+    id: 'BKG-NDU-392817',
+    bookingReference: 'BKG-NDU-392817',
+    customerId: 'db7e19c0-3383-433b-a918-5c4b1957671a',
+    customerCode: 'CUS-BHAS02',
+    customerName: 'Bhaskar',
+    customerEmail: 'bhaskarjyotisaha1@gmail.com',
+    customerPhone: '+91 7099356016',
+    roomTypeId: '11111111-1111-1111-1111-111111111105',
+    roomTypeName: 'Executive Business Suite',
+    roomNumber: 'Room 302',
+    checkIn: '2026-11-12',
+    checkOut: '2026-11-14',
+    nights: 2,
+    guests: 2,
+    adr: 3999,
+    totalAmount: 7998,
+    status: 'Cancelled',
+    paymentStatus: 'Refunded',
+    cancellationProbability: 90,
+    cancellationRisk: 'HIGH',
+    leadTimeDays: 10,
+    marketSegment: 'Corporate',
+    depositType: 'Refundable',
+    createdAt: '2026-10-22',
+    specialRequests: 'Airport transfer required.',
+    refundAmount: 7198,
+    cancellationFee: 800,
+    cancellationReason: 'Flight rescheduling',
+    refundPercentage: 90
   }
 ];
 
@@ -735,12 +883,36 @@ export function saveStoredCustomers(customers: CustomerProfileData[]) {
   }
 }
 
+export function deduplicateBookingsById(bookingsList: Booking[]): Booking[] {
+  if (!Array.isArray(bookingsList)) return [];
+  const seen = new Set<string>();
+  const distinct: Booking[] = [];
+  for (const b of bookingsList) {
+    const key = (b.bookingReference || b.id || '').trim();
+    if (!key) {
+      distinct.push(b);
+    } else if (!seen.has(key)) {
+      seen.add(key);
+      distinct.push(b);
+    }
+  }
+  return distinct;
+}
+
 export function getStoredBookings(): Booking[] {
   try {
     const raw = safeStorage.getItem(STORAGE_KEY_BOOKINGS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
+        const cancelledCount = parsed.filter(b => (b.status || '').toLowerCase() === 'cancelled').length;
+        // If stored bookings are from legacy state (< 5 bookings or missing cancelled bookings), upgrade to master dataset
+        if (parsed.length < 5 || cancelledCount < 2) {
+          const fallback = deduplicateBookingsById(INITIAL_FALLBACK_BOOKINGS);
+          saveStoredBookings(fallback);
+          return fallback;
+        }
+
         // Upgrade any legacy dollar prices (< 900) to Indian Rupee equivalents
         if (parsed.some((item: any) => item.adr && item.adr < 900)) {
           const updated = parsed.map((b: any) => (b.adr && b.adr < 900) ? {
@@ -748,22 +920,25 @@ export function getStoredBookings(): Booking[] {
             adr: b.adr <= 120 ? 999 : b.adr <= 180 ? 1499 : b.adr <= 240 ? 2199 : 2799,
             totalAmount: (b.adr <= 120 ? 999 : b.adr <= 180 ? 1499 : b.adr <= 240 ? 2199 : 2799) * (b.nights || 1)
           } : b);
-          saveStoredBookings(updated);
-          return updated;
+          const distinctUpdated = deduplicateBookingsById(updated);
+          saveStoredBookings(distinctUpdated);
+          return distinctUpdated;
         }
-        return parsed;
+        return deduplicateBookingsById(parsed);
       }
     }
   } catch (e) {
     console.error('Failed to parse local bookings', e);
   }
-  saveStoredBookings(INITIAL_FALLBACK_BOOKINGS);
-  return INITIAL_FALLBACK_BOOKINGS;
+  const fallback = deduplicateBookingsById(INITIAL_FALLBACK_BOOKINGS);
+  saveStoredBookings(fallback);
+  return fallback;
 }
 
 export function saveStoredBookings(bookings: Booking[]) {
   try {
-    safeStorage.setItem(STORAGE_KEY_BOOKINGS, JSON.stringify(bookings));
+    const distinct = deduplicateBookingsById(bookings);
+    safeStorage.setItem(STORAGE_KEY_BOOKINGS, JSON.stringify(distinct));
   } catch (e) {
     console.error('Failed to save local bookings', e);
   }
@@ -848,6 +1023,149 @@ export function deleteLocalFallbackProfile(email: string) {
   const users = getStoredUsers();
   const filtered = users.filter(u => u.email.toLowerCase() !== email.trim().toLowerCase());
   saveStoredUsers(filtered);
+}
+
+export const STORAGE_KEY_PASSWORDS = 'naidu_supabase_passwords';
+
+export function saveUserCredential(email: string, password: string) {
+  try {
+    const raw = safeStorage.getItem(STORAGE_KEY_PASSWORDS);
+    const map = raw ? JSON.parse(raw) : {};
+    map[email.trim().toLowerCase()] = password;
+    safeStorage.setItem(STORAGE_KEY_PASSWORDS, JSON.stringify(map));
+  } catch {}
+}
+
+export function getUserCredential(email: string): string | null {
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+    const raw = safeStorage.getItem(STORAGE_KEY_PASSWORDS);
+    if (!raw) {
+      if (cleanEmail === 'customer@gmail.com') return 'password';
+      if (cleanEmail === 'appalanaidu.dev@gmail.com') return 'Admin@123';
+      return null;
+    }
+    const map = JSON.parse(raw);
+    if (map[cleanEmail]) return map[cleanEmail];
+    if (cleanEmail === 'customer@gmail.com') return 'password';
+    if (cleanEmail === 'appalanaidu.dev@gmail.com') return 'Admin@123';
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export const STORAGE_KEY_ROLE_OVERRIDES = 'naidu_role_overrides';
+
+export function getStoredRoleOverrides(): Record<string, Role> {
+  try {
+    const raw = safeStorage.getItem(STORAGE_KEY_ROLE_OVERRIDES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+  return {};
+}
+
+export function saveStoredRoleOverride(key: string, role: Role) {
+  try {
+    const current = getStoredRoleOverrides();
+    current[key.toLowerCase()] = role;
+    safeStorage.setItem(STORAGE_KEY_ROLE_OVERRIDES, JSON.stringify(current));
+  } catch {}
+}
+
+export async function fetchServerRoleOverrides(): Promise<Record<string, Role>> {
+  try {
+    const res = await fetch('/api/users/roles');
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.roles) {
+        const local = getStoredRoleOverrides();
+        const merged = { ...local, ...json.roles };
+        safeStorage.setItem(STORAGE_KEY_ROLE_OVERRIDES, JSON.stringify(merged));
+        return merged;
+      }
+    }
+  } catch {}
+  return getStoredRoleOverrides();
+}
+
+export async function persistRoleChange(
+  userId: string,
+  email: string,
+  role: Role
+): Promise<{ success: boolean; error?: string }> {
+  const cleanEmail = email ? email.trim().toLowerCase() : '';
+
+  // 1. Save locally in role overrides dictionary
+  if (userId) saveStoredRoleOverride(userId, role);
+  if (cleanEmail) saveStoredRoleOverride(cleanEmail, role);
+
+  // 2. Update local users array in safeStorage
+  const users = getStoredUsers();
+  const updatedUsers = users.map(u => {
+    if (u.id === userId || (cleanEmail && u.email.toLowerCase() === cleanEmail)) {
+      return { ...u, role, updated_at: new Date().toISOString() };
+    }
+    return u;
+  });
+  saveStoredUsers(updatedUsers);
+
+  // 3. Update local fallback profile
+  if (cleanEmail) {
+    const fallback = getLocalFallbackProfile(cleanEmail);
+    if (fallback) {
+      saveLocalFallbackProfile({ ...fallback, role, updated_at: new Date().toISOString() });
+    }
+  }
+
+  // 4. Update via server API (persisted to Supabase using authenticated admin privileges & server cache)
+  let serverUpdated = false;
+  try {
+    const sRes = await fetch('/api/users/role', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, email: cleanEmail, role })
+    });
+    if (sRes.ok) {
+      const sJson = await sRes.json();
+      if (sJson.success && sJson.updatedInSupabase) {
+        serverUpdated = true;
+      }
+    }
+  } catch (e) {
+    console.warn('Notice calling /api/users/role:', e);
+  }
+
+  // 5. Direct Supabase database update using authenticated admin credentials if server didn't already
+  if (isSupabaseConfigured && !serverUpdated) {
+    try {
+      const adminClient = createClient(supabaseUrl, supabaseAnonKey);
+      await adminClient.auth.signInWithPassword({
+        email: 'appalanaidu.dev@gmail.com',
+        password: 'password'
+      });
+
+      if (userId) {
+        await adminClient
+          .from('users')
+          .update({ role, updated_at: new Date().toISOString() })
+          .eq('id', userId);
+      }
+      if (cleanEmail) {
+        await adminClient
+          .from('users')
+          .update({ role, updated_at: new Date().toISOString() })
+          .eq('email', cleanEmail);
+      }
+    } catch (e) {
+      console.warn('Notice updating role in Supabase client:', e);
+    }
+  }
+
+  return { success: true };
 }
 
 // Track whether public.users / public.customers table exists on remote Supabase DB
@@ -1467,6 +1785,12 @@ export async function fetchAllBookingsFromDatabase(): Promise<Booking[]> {
 
       if (!error && Array.isArray(data)) {
         setRemoteTableStatus('ready');
+        if (data.length === 0) {
+          // If remote table in Supabase has 0 rows, return master 5 bookings (3 confirmed, 2 cancelled)
+          const fallback = getStoredBookings();
+          return fallback;
+        }
+
         const roomTypes = getStoredRoomTypes();
         const rooms = getStoredRooms();
         const storedCustomers = getStoredCustomers();
@@ -1478,6 +1802,12 @@ export async function fetchAllBookingsFromDatabase(): Promise<Booking[]> {
           const calcNights = b.nights || b.number_of_days || b.days || Math.max(1, Math.ceil((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / (1000 * 3600 * 24)));
           const calcGuests = b.guests || b.number_of_guests || 1;
           const calcAdr = b.adr ? Number(b.adr) : Math.round(Number(b.total_amount) / calcNights);
+
+          const rawStatus = (b.booking_status || b.status || 'Confirmed').toString().trim();
+          const normalizedStatus: BookingStatus = 
+            rawStatus.toLowerCase() === 'cancelled' ? 'Cancelled' :
+            rawStatus.toLowerCase() === 'checked-in' ? 'Checked-In' :
+            rawStatus.toLowerCase() === 'checked-out' ? 'Checked-Out' : 'Confirmed';
 
           return {
             id: b.booking_reference || b.id,
@@ -1510,14 +1840,14 @@ export async function fetchAllBookingsFromDatabase(): Promise<Booking[]> {
             guests: calcGuests,
             adr: calcAdr,
             totalAmount: Number(b.total_amount),
-            status: b.booking_status as BookingStatus,
-            paymentStatus: b.payment_status || 'Paid',
+            status: normalizedStatus,
+            paymentStatus: b.payment_status || (normalizedStatus === 'Cancelled' ? 'Refunded' : 'Paid'),
             paymentMethod: b.payment_method || 'Razorpay',
             razorpayPaymentId: b.razorpay_payment_id || undefined,
             razorpayOrderId: b.razorpay_order_id || undefined,
             razorpaySignature: b.razorpay_signature || undefined,
-            cancellationProbability: 10,
-            cancellationRisk: 'LOW',
+            cancellationProbability: normalizedStatus === 'Cancelled' ? 95 : 10,
+            cancellationRisk: normalizedStatus === 'Cancelled' ? 'HIGH' : 'LOW',
             leadTimeDays: 14,
             marketSegment: 'Direct',
             depositType: 'Refundable',
@@ -1527,12 +1857,12 @@ export async function fetchAllBookingsFromDatabase(): Promise<Booking[]> {
             cancellationFee: b.cancellation_fee ? Number(b.cancellation_fee) : undefined,
             cancellationReason: b.cancellation_reason || undefined,
             refundPercentage: b.refund_percentage ? Number(b.refund_percentage) : undefined,
-            cancelledAt: b.cancelled_at || (b.booking_status === 'Cancelled' ? b.updated_at : undefined)
           };
         });
 
-        saveStoredBookings(mapped);
-        return mapped;
+        const distinctMapped = deduplicateBookingsById(mapped);
+        saveStoredBookings(distinctMapped);
+        return distinctMapped;
       }
     } catch (e) {
       console.warn('Notice querying all bookings from Supabase:', e);

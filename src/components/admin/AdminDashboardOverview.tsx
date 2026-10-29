@@ -20,6 +20,7 @@ import { ChartCard, TrendLineChart, RiskDonutChart, HorizontalBarChart } from '.
 import { RiskBadge } from '../common/RiskBadge';
 import { StatusBadge } from '../common/StatusBadge';
 import { useHotel } from '../../context/HotelContext';
+import { deduplicateBookingsById } from '../../lib/supabase';
 
 interface AdminDashboardOverviewProps {
   onNavigateTab: (tabId: string) => void;
@@ -33,40 +34,50 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
   const { bookings, customers, rooms, roomTypes, insights } = useHotel();
   const [selectedRiskFilter, setSelectedRiskFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
 
-  // KPI Calculations from active data
-  const totalBookingsCount = bookings.length;
-  const confirmedCount = bookings.filter(b => b.status === 'Confirmed' || b.status === 'Checked-In').length;
-  const cancelledCount = bookings.filter(b => b.status === 'Cancelled').length;
-  const cancellationRate = totalBookingsCount > 0 ? ((cancelledCount / totalBookingsCount) * 100).toFixed(1) : '0.0';
-  const avgAdr = totalBookingsCount > 0 ? Math.round(bookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookingsCount) : 0;
+  // Distinct Bookings Calculation (deduplicated strictly by booking ID / bookingReference)
+  const distinctBookings = useMemo(() => deduplicateBookingsById(bookings), [bookings]);
 
-  // Real collected revenue vs pending
-  const actualCollectedRevenue = bookings
-    .filter(b => b.paymentStatus === 'Paid' && b.status !== 'Cancelled')
-    .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
-  const pendingRevenue = bookings
+  // KPI Calculations taking booking ID as a distinct count
+  const totalBookingsCount = distinctBookings.length;
+  const distinctConfirmedBookings = distinctBookings.filter(b => b.status === 'Confirmed' || b.status === 'Checked-In');
+  const confirmedCount = distinctConfirmedBookings.length;
+  const distinctCancelledBookings = distinctBookings.filter(b => b.status === 'Cancelled');
+  const cancelledCount = distinctCancelledBookings.length;
+  const cancellationRate = totalBookingsCount > 0 ? ((cancelledCount / totalBookingsCount) * 100).toFixed(1) : '0.0';
+
+  // Collected revenue strictly paid and not cancelled from distinct bookings
+  const distinctPaidBookings = distinctBookings.filter(b => b.paymentStatus === 'Paid' && b.status !== 'Cancelled');
+  const actualCollectedRevenue = distinctPaidBookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+
+  // Pending revenue from distinct bookings
+  const pendingRevenue = distinctBookings
     .filter(b => b.paymentStatus === 'Pending' && b.status !== 'Cancelled')
     .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+
+  // Average ADR across distinct bookings
+  const avgAdr = totalBookingsCount > 0
+    ? Math.round(distinctBookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookingsCount)
+    : 0;
 
   const availableRoomsCount = rooms.filter(r => r.status === 'Available').length;
   const totalRoomsCount = rooms.length;
 
-  // High risk bookings specifically for the prediction section
-  const highRiskBookings = bookings.filter(b => b.cancellationRisk === 'HIGH');
-  const mediumRiskBookings = bookings.filter(b => b.cancellationRisk === 'MEDIUM');
-  const lowRiskBookings = bookings.filter(b => b.cancellationRisk === 'LOW');
+  // High risk bookings specifically for the prediction section from distinct bookings
+  const highRiskBookings = distinctBookings.filter(b => b.cancellationRisk === 'HIGH');
+  const mediumRiskBookings = distinctBookings.filter(b => b.cancellationRisk === 'MEDIUM');
+  const lowRiskBookings = distinctBookings.filter(b => b.cancellationRisk === 'LOW');
 
-  const filteredRiskList = bookings.filter(b => {
+  const filteredRiskList = distinctBookings.filter(b => {
     if (selectedRiskFilter === 'HIGH') return b.cancellationRisk === 'HIGH';
     if (selectedRiskFilter === 'MEDIUM') return b.cancellationRisk === 'MEDIUM';
     return b.cancellationRisk === 'HIGH' || b.cancellationRisk === 'MEDIUM';
   });
 
-  // Dynamically compute monthly trends from real bookings
+  // Dynamically compute monthly trends from distinct bookings
   const monthlyTrends = useMemo(() => {
-    if (bookings.length === 0) return [];
+    if (distinctBookings.length === 0) return [];
     const map = new Map<string, { bookings: number; cancellations: number }>();
-    bookings.forEach(b => {
+    distinctBookings.forEach(b => {
       const d = new Date(b.checkIn || b.createdAt);
       const label = !isNaN(d.getTime())
         ? d.toLocaleString('en-US', { month: 'short' })
@@ -81,12 +92,12 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
       primary: val.bookings,
       secondary: val.cancellations
     }));
-  }, [bookings]);
+  }, [distinctBookings]);
 
-  // Dynamically compute cancellation breakdown by room type from real database records
+  // Dynamically compute cancellation breakdown by room type from distinct bookings
   const roomTypeBreakdown = useMemo(() => {
     return roomTypes.map(rt => {
-      const matched = bookings.filter(b => b.roomTypeId === rt.id || b.roomTypeName === rt.name);
+      const matched = distinctBookings.filter(b => b.roomTypeId === rt.id || b.roomTypeName === rt.name);
       const total = matched.length;
       const cancelled = matched.filter(b => b.status === 'Cancelled').length;
       return {
@@ -96,9 +107,9 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
         color: 'bg-indigo-600'
       };
     });
-  }, [roomTypes, bookings]);
+  }, [roomTypes, distinctBookings]);
 
-  // Dynamically compute lead time breakdown from real database records
+  // Dynamically compute lead time breakdown from distinct bookings
   const leadTimeBreakdown = useMemo(() => {
     const buckets = [
       { label: '< 7 Days', min: 0, max: 7 },
@@ -108,14 +119,14 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
       { label: '> 60 Days', min: 61, max: 9999 }
     ];
     return buckets.map(b => {
-      const inBucket = bookings.filter(bk => bk.leadTimeDays >= b.min && bk.leadTimeDays <= b.max);
+      const inBucket = distinctBookings.filter(bk => bk.leadTimeDays >= b.min && bk.leadTimeDays <= b.max);
       const total = inBucket.length;
       const cancelled = inBucket.filter(bk => bk.status === 'Cancelled').length;
       const rate = total > 0 ? Math.round((cancelled / total) * 100) : 0;
       const risk = rate >= 40 ? 'HIGH' : rate >= 20 ? 'MEDIUM' : 'LOW';
       return { leadTime: b.label, rate, risk, total };
     });
-  }, [bookings]);
+  }, [distinctBookings]);
 
   return (
     <div className="space-y-6">
@@ -325,7 +336,7 @@ export const AdminDashboardOverview: React.FC<AdminDashboardOverviewProps> = ({
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[10px] tracking-wider">
                 <tr>
                   <th className="py-3 px-4">Booking ID</th>
-                  <th className="py-3 px-4">Customer</th>
+                  <th className="py-3 px-4">Guest</th>
                   <th className="py-3 px-4">Room Type</th>
                   <th className="py-3 px-4">Check-In</th>
                   <th className="py-3 px-4">Lead Time</th>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search,
   Filter,
@@ -17,6 +17,7 @@ import { Booking, BookingStatus } from '../../types/hotel';
 import { StatusBadge } from '../common/StatusBadge';
 import { RiskBadge } from '../common/RiskBadge';
 import { Modal } from '../common/Modal';
+import { deduplicateBookingsById } from '../../lib/supabase';
 
 export const AdminBookings: React.FC = () => {
   const { bookings, updateBookingStatus, cancelBooking, refreshAllData, isDatabaseSyncing } = useHotel();
@@ -27,8 +28,11 @@ export const AdminBookings: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
-  // Filter logic
-  const filteredBookings = bookings.filter(b => {
+  // Distinct Bookings by booking ID / bookingReference
+  const distinctBookings = useMemo(() => deduplicateBookingsById(bookings), [bookings]);
+
+  // Filter logic across distinct bookings
+  const filteredBookings = distinctBookings.filter(b => {
     if (statusFilter !== 'ALL' && b.status !== statusFilter) return false;
     if (riskFilter !== 'ALL' && b.cancellationRisk !== riskFilter) return false;
     if (searchQuery) {
@@ -79,11 +83,10 @@ export const AdminBookings: React.FC = () => {
           <button
             onClick={() => refreshAllData()}
             disabled={isDatabaseSyncing}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors border border-blue-200 disabled:opacity-50"
-            title="Refresh bookings from Supabase database"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors border border-blue-200 disabled:opacity-50"
+            title="Refresh bookings"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isDatabaseSyncing ? 'animate-spin' : ''}`} />
-            <span>{isDatabaseSyncing ? 'Syncing...' : 'Sync Supabase'}</span>
           </button>
           <button
             onClick={exportCSV}
@@ -154,7 +157,7 @@ export const AdminBookings: React.FC = () => {
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[10px] tracking-wider">
               <tr>
                 <th className="py-3 px-4">Booking ID</th>
-                <th className="py-3 px-4">Customer</th>
+                <th className="py-3 px-4">Guest</th>
                 <th className="py-3 px-4">Room Type</th>
                 <th className="py-3 px-4">Check-In</th>
                 <th className="py-3 px-4">Check-Out</th>

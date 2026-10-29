@@ -17,13 +17,17 @@ import {
   Calendar,
   Phone,
   Mail,
-  UserCheck
+  UserCheck,
+  Copy,
+  Check,
+  ExternalLink
 } from 'lucide-react';
 import { useHotel } from '../../context/HotelContext';
 import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../common/Modal';
 import { StatusBadge } from '../common/StatusBadge';
 import { Role, UserProfile } from '../../types/auth';
+import { supabaseUrl } from '../../lib/supabase';
 
 type RoleFilterType = 'ALL' | 'customer' | 'management' | 'admin';
 
@@ -114,7 +118,13 @@ export const AdminManagementUsers: React.FC = () => {
     if (!selectedUserForRoleChange) return;
 
     // Safety guard: prevent admin from accidentally demoting their own currently logged-in account
-    if (selectedUserForRoleChange.id === currentAdmin?.id && targetRole !== 'admin') {
+    const isCurrentAdmin =
+      selectedUserForRoleChange.id === currentAdmin?.id ||
+      (selectedUserForRoleChange.email &&
+        currentAdmin?.email &&
+        selectedUserForRoleChange.email.toLowerCase() === currentAdmin.email.toLowerCase());
+
+    if (isCurrentAdmin && targetRole !== 'admin') {
       setRoleModalError('Security policy: You cannot demote your own active Administrator session.');
       return;
     }
@@ -131,8 +141,15 @@ export const AdminManagementUsers: React.FC = () => {
     setIsUpdatingRole(false);
 
     if (res.success) {
-      const roleLabel = targetRole.charAt(0).toUpperCase() + targetRole.slice(1);
-      setSuccessMessage(`Role for ${selectedUserForRoleChange.full_name} successfully updated to ${roleLabel} in Supabase.`);
+      const roleLabel =
+        targetRole === 'customer'
+          ? 'Guest'
+          : targetRole === 'management'
+          ? 'Operations'
+          : 'Administrator';
+      setSuccessMessage(
+        `Role for "${selectedUserForRoleChange.full_name}" successfully updated to ${roleLabel}.`
+      );
       setSelectedUserForRoleChange(null);
       setTimeout(() => setSuccessMessage(''), 4500);
     } else {
@@ -145,24 +162,21 @@ export const AdminManagementUsers: React.FC = () => {
     switch (role) {
       case 'admin':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-            <ShieldAlert className="w-3 h-3 text-rose-600" />
-            Admin
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200">
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
           </span>
         );
       case 'management':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-            <Briefcase className="w-3 h-3 text-blue-600" />
-            Management
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+            <Briefcase className="w-3.5 h-3.5 text-blue-600" />
           </span>
         );
       case 'customer':
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <Users className="w-3 h-3 text-emerald-600" />
-            Customer
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <Users className="w-3.5 h-3.5 text-emerald-600" />
           </span>
         );
     }
@@ -188,7 +202,7 @@ export const AdminManagementUsers: React.FC = () => {
             title="Refresh database records"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isDatabaseSyncing ? 'animate-spin' : ''}`} />
-            <span>{isDatabaseSyncing ? 'Syncing...' : 'Sync Supabase'}</span>
+            <span>Refresh</span>
           </button>
           <button
             onClick={() => setIsCreateModalOpen(true)}
@@ -214,7 +228,7 @@ export const AdminManagementUsers: React.FC = () => {
         <div>
           <p className="font-semibold text-blue-950">Multi-Role Governance & Promotion Console</p>
           <p className="text-blue-800/90 mt-0.5 leading-relaxed">
-            Administrators can promote or demote any account between <strong>Customer</strong> (guest bookings), <strong>Management</strong> (hotel operations & occupancy), and <strong>Admin</strong> (full system authority). All changes take effect immediately in the live Supabase PostgreSQL database.
+            Promote or demote any account across access tiers (guest bookings, hotel operations & occupancy, full system authority). All changes take effect immediately in the database.
           </p>
         </div>
       </div>
@@ -242,7 +256,10 @@ export const AdminManagementUsers: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Customers ({counts.customer})
+              <span className="inline-flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" />
+                <span>({counts.customer})</span>
+              </span>
             </button>
             <button
               onClick={() => setRoleFilter('management')}
@@ -252,7 +269,10 @@ export const AdminManagementUsers: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Management ({counts.management})
+              <span className="inline-flex items-center gap-1.5">
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>({counts.management})</span>
+              </span>
             </button>
             <button
               onClick={() => setRoleFilter('admin')}
@@ -262,7 +282,10 @@ export const AdminManagementUsers: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Admins ({counts.admin})
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>({counts.admin})</span>
+              </span>
             </button>
           </div>
 
@@ -289,7 +312,7 @@ export const AdminManagementUsers: React.FC = () => {
               User Directory ({filteredUsers.length})
             </h3>
           </div>
-          <span className="text-xs text-slate-400 font-mono">Real-time Supabase Data</span>
+          <span className="text-xs text-slate-400 font-mono">Real-time Data</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -498,7 +521,7 @@ export const AdminManagementUsers: React.FC = () => {
                       <span className="p-1 rounded bg-emerald-100 text-emerald-700">
                         <Users className="w-3.5 h-3.5" />
                       </span>
-                      <span className="text-xs font-bold text-slate-900">Customer (Guest)</span>
+                      <span className="text-xs font-bold text-slate-900">Guest Access</span>
                     </div>
                     {targetRole === 'customer' && (
                       <span className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wide">
@@ -525,7 +548,7 @@ export const AdminManagementUsers: React.FC = () => {
                       <span className="p-1 rounded bg-blue-100 text-blue-700">
                         <Briefcase className="w-3.5 h-3.5" />
                       </span>
-                      <span className="text-xs font-bold text-slate-900">Management (Operations)</span>
+                      <span className="text-xs font-bold text-slate-900">Operations</span>
                     </div>
                     {targetRole === 'management' && (
                       <span className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide">
@@ -552,7 +575,7 @@ export const AdminManagementUsers: React.FC = () => {
                       <span className="p-1 rounded bg-rose-100 text-rose-700">
                         <ShieldAlert className="w-3.5 h-3.5" />
                       </span>
-                      <span className="text-xs font-bold text-slate-900">Administrator (Full Control)</span>
+                      <span className="text-xs font-bold text-slate-900">Full System Access</span>
                     </div>
                     {targetRole === 'admin' && (
                       <span className="text-[10px] font-semibold text-rose-700 uppercase tracking-wide">
@@ -572,7 +595,7 @@ export const AdminManagementUsers: React.FC = () => {
               <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-relaxed flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Caution:</strong> Promoting this user to <strong>Administrator</strong> grants full access to modify all hotel configurations, revenue records, and other user permissions.
+                  <strong>Caution:</strong> Promoting this user grants full access to modify all hotel configurations, revenue records, and other user permissions.
                 </span>
               </div>
             )}
@@ -587,7 +610,7 @@ export const AdminManagementUsers: React.FC = () => {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         title="Create New User Account"
-        subtitle="Provision an account directly in Supabase. Role defaults to Management."
+        subtitle="Provision a new user account."
         maxWidth="md"
         footer={
           <>
@@ -656,7 +679,7 @@ export const AdminManagementUsers: React.FC = () => {
               className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white"
             />
             <p className="text-[11px] text-slate-400 mt-1">
-              Account will be created with active status and assigned to Management.
+              Account will be created with active status.
             </p>
           </div>
         </form>

@@ -189,12 +189,12 @@ export const AdminSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* Supabase Database & Users Table Integration */}
+        {/* Database Configuration */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <Database className="w-4 h-4 text-emerald-600" />
-              <h3 className="text-sm font-bold text-slate-900">Supabase Database & Users Table</h3>
+              <h3 className="text-sm font-bold text-slate-900">Database Configuration</h3>
             </div>
             <button
               type="button"
@@ -209,7 +209,7 @@ export const AdminSettings: React.FC = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
-              <div className="text-[11px] font-semibold text-slate-500">Supabase Project Endpoint</div>
+              <div className="text-[11px] font-semibold text-slate-500">Database Endpoint</div>
               <div className="font-mono text-xs text-slate-800 truncate font-semibold">{supabaseUrl}</div>
               <div className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
@@ -218,8 +218,8 @@ export const AdminSettings: React.FC = () => {
             </div>
 
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
-              <div className="text-[11px] font-semibold text-slate-500">Database Storage Table</div>
-              <div className="font-mono text-xs text-slate-800 font-semibold">public.users</div>
+              <div className="text-[11px] font-semibold text-slate-500">Storage Status</div>
+              <div className="font-mono text-xs text-slate-800 font-semibold">Configured</div>
               <div className="text-[10px] text-slate-600">
                 {databaseStatus.message}
               </div>
@@ -235,7 +235,7 @@ export const AdminSettings: React.FC = () => {
           <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-semibold text-blue-900">
-                Supabase Users Table Migration & Synchronization
+                Database Migration & Setup
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -251,7 +251,7 @@ export const AdminSettings: React.FC = () => {
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Supabase SQL</span>
+                      <span>Copy SQL</span>
                     </>
                   )}
                 </button>
@@ -273,12 +273,12 @@ export const AdminSettings: React.FC = () => {
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-semibold transition-colors shadow-xs disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isCheckingDb ? 'animate-spin' : ''}`} />
-                  <span>{isCheckingDb ? 'Verifying...' : 'Verify & Append Rows'}</span>
+                  <span>{isCheckingDb ? 'Verifying...' : 'Verify Database'}</span>
                 </button>
               </div>
             </div>
             <p className="text-blue-800 text-[11px] leading-relaxed">
-              All sign-ins (Google OAuth, email/password, and registrations) are automatically saved to the <code>users</code> table. If initializing the remote table directly in the Supabase Dashboard, click <strong>Copy Supabase SQL</strong>, run it in your project's SQL Editor, and then click <strong>Verify & Append Rows</strong> to synchronize all users immediately.
+              All registrations and sessions are automatically preserved. If initializing the remote table directly, click <strong>Copy SQL</strong>, run it in your project's SQL Editor, and then click <strong>Verify Database</strong> to complete initialization.
             </p>
           </div>
         </div>

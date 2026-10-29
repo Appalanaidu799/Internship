@@ -13,35 +13,39 @@ import {
 import { KpiCard } from '../common/KpiCard';
 import { ChartCard, TrendLineChart, HorizontalBarChart } from '../common/ChartCard';
 import { useHotel } from '../../context/HotelContext';
+import { deduplicateBookingsById } from '../../lib/supabase';
 
 export const AdminAnalytics: React.FC = () => {
   const { bookings, rooms, roomTypes, customers } = useHotel();
 
-  const totalBookings = bookings.length;
-  const cancelledCount = bookings.filter(b => b.status === 'Cancelled').length;
+  // Distinct Bookings Calculation (deduplicated strictly by booking ID / bookingReference)
+  const distinctBookings = useMemo(() => deduplicateBookingsById(bookings), [bookings]);
+
+  const totalBookings = distinctBookings.length;
+  const cancelledCount = distinctBookings.filter(b => b.status === 'Cancelled').length;
   const cancellationRate = totalBookings > 0 ? ((cancelledCount / totalBookings) * 100).toFixed(1) : '0.0';
-  const avgAdr = totalBookings > 0 ? Math.round(bookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookings) : 0;
+  const avgAdr = totalBookings > 0 ? Math.round(distinctBookings.reduce((sum, b) => sum + (b.adr || 0), 0) / totalBookings) : 0;
 
   const totalRooms = rooms.length;
   const occupiedRooms = rooms.filter(r => r.status === 'Occupied').length;
   const occupancyRate = totalRooms > 0 ? ((occupiedRooms / totalRooms) * 100).toFixed(1) : '0.0';
 
-  // Actual collected revenue: strictly paid and not cancelled
-  const actualCollectedRevenue = bookings
+  // Actual collected revenue: strictly paid and not cancelled from distinct bookings
+  const actualCollectedRevenue = distinctBookings
     .filter(b => b.paymentStatus === 'Paid' && b.status !== 'Cancelled')
     .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
-  const pendingRevenue = bookings
+  const pendingRevenue = distinctBookings
     .filter(b => b.paymentStatus === 'Pending' && b.status !== 'Cancelled')
     .reduce((sum, b) => sum + (b.totalAmount || 0), 0);
 
   // RevPAR: actual collected revenue divided by total inventory
   const revPar = totalRooms > 0 ? Math.round(actualCollectedRevenue / totalRooms) : 0;
 
-  // Real dynamic monthly trends
+  // Real dynamic monthly trends from distinct bookings
   const monthlyTrends = useMemo(() => {
-    if (bookings.length === 0) return [];
+    if (distinctBookings.length === 0) return [];
     const map = new Map<string, { bookings: number; cancellations: number; totalAdr: number }>();
-    bookings.forEach(b => {
+    distinctBookings.forEach(b => {
       const d = new Date(b.checkIn || b.createdAt);
       const label = !isNaN(d.getTime()) ? d.toLocaleString('en-US', { month: 'short' }) : 'Active';
       const curr = map.get(label) || { bookings: 0, cancellations: 0, totalAdr: 0 };
@@ -56,12 +60,12 @@ export const AdminAnalytics: React.FC = () => {
       secondary: val.cancellations,
       adr: Math.round(val.totalAdr / (val.bookings || 1))
     }));
-  }, [bookings]);
+  }, [distinctBookings]);
 
-  // Real room type performance from database
+  // Real room type performance from distinct bookings
   const roomTypeStats = useMemo(() => {
     return roomTypes.map(rt => {
-      const matched = bookings.filter(b => b.roomTypeId === rt.id || b.roomTypeName === rt.name);
+      const matched = distinctBookings.filter(b => b.roomTypeId === rt.id || b.roomTypeName === rt.name);
       const total = matched.length;
       const cancelled = matched.filter(b => b.status === 'Cancelled').length;
       return {
@@ -71,13 +75,13 @@ export const AdminAnalytics: React.FC = () => {
         color: 'bg-blue-600'
       };
     });
-  }, [roomTypes, bookings]);
+  }, [roomTypes, distinctBookings]);
 
-  // Real payment status distribution
+  // Real payment status distribution from distinct bookings
   const paymentStats = useMemo(() => {
-    const paid = bookings.filter(b => b.paymentStatus === 'Paid').length;
-    const pending = bookings.filter(b => b.paymentStatus === 'Pending').length;
-    const refunded = bookings.filter(b => b.paymentStatus === 'Refunded').length;
+    const paid = distinctBookings.filter(b => b.paymentStatus === 'Paid').length;
+    const pending = distinctBookings.filter(b => b.paymentStatus === 'Pending').length;
+    const refunded = distinctBookings.filter(b => b.paymentStatus === 'Refunded').length;
     return [
       { label: 'Paid (Settled)', value: paid, color: 'bg-emerald-600' },
       { label: 'Pending Payment', value: pending, color: 'bg-amber-500' },

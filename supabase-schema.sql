@@ -512,3 +512,6 @@ VALUES
   ('22222222-2222-2222-2222-222222222401', 'Villa 401', '11111111-1111-1111-1111-111111111106', 4, 'Available'),
   ('22222222-2222-2222-2222-222222222501', 'Penthouse 501', '11111111-1111-1111-1111-111111111107', 5, 'Available')
 ON CONFLICT (room_number) DO NOTHING;
+
+-- Force PostgREST schema cache reload so new columns and policies take effect immediately
+NOTIFY pgrst, 'reload schema';

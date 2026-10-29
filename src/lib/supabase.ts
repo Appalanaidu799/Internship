@@ -2126,6 +2126,9 @@ export async function resolveDatabaseRoomTypeId(
  * Validates check-in/out dates, guest count against room capacity, and availability.
  */
 export async function createBookingInDatabase(bookingData: {
+  id?: string;
+  bookingReference?: string;
+  status?: BookingStatus;
   customerId: string;
   customerCode?: string;
   customerName: string;
@@ -2161,6 +2164,11 @@ export async function createBookingInDatabase(bookingData: {
   razorpayPaymentId?: string;
   razorpayOrderId?: string;
   razorpaySignature?: string;
+  createdAt?: string;
+  cancelledAt?: string;
+  refundAmount?: number;
+  cancellationFee?: number;
+  cancellationReason?: string;
 }): Promise<{ success: boolean; booking?: Booking; error?: string }> {
   const { customerId, roomTypeId, checkIn, checkOut, guests, nights, adr } = bookingData;
 
@@ -2217,12 +2225,13 @@ export async function createBookingInDatabase(bookingData: {
     }
   }
 
-  // 5. Generate unique booking reference
-  const bookingRef = generateBookingReference();
+  // 5. Generate unique booking reference or preserve existing reference
+  const bookingRef = bookingData.bookingReference || generateBookingReference();
+  const bookingStatus: BookingStatus = bookingData.status || 'Confirmed';
   const totalAmount = adr * nights;
 
   const newBooking: Booking = {
-    id: bookingRef,
+    id: bookingData.id || bookingRef,
     bookingReference: bookingRef,
     customerId: resolvedCustomerId,
     customerCode: bookingData.customerCode || 'CUS-GUEST',
@@ -2254,27 +2263,31 @@ export async function createBookingInDatabase(bookingData: {
     guests,
     adr,
     totalAmount,
-    status: 'Confirmed',
+    status: bookingStatus,
     paymentStatus: (bookingData.paymentStatus || 'Paid') as any,
     paymentMethod: bookingData.paymentMethod || 'Razorpay',
     razorpayPaymentId: bookingData.razorpayPaymentId,
     razorpayOrderId: bookingData.razorpayOrderId,
     razorpaySignature: bookingData.razorpaySignature,
-    cancellationProbability: 10,
-    cancellationRisk: 'LOW',
+    cancellationProbability: bookingStatus === 'Cancelled' ? 100 : 10,
+    cancellationRisk: bookingStatus === 'Cancelled' ? 'HIGH' : 'LOW',
     leadTimeDays: Math.max(1, Math.ceil((d1.getTime() - Date.now()) / (1000 * 3600 * 24))),
     marketSegment: 'Direct',
     depositType: 'Refundable',
-    createdAt: new Date().toISOString().split('T')[0],
+    createdAt: bookingData.createdAt || new Date().toISOString().split('T')[0],
+    cancelledAt: bookingData.cancelledAt,
+    refundAmount: bookingData.refundAmount,
+    cancellationFee: bookingData.cancellationFee,
+    cancellationReason: bookingData.cancellationReason,
     specialRequests: bookingData.specialRequests || ''
   };
 
   // 6. Direct Supabase Integration: Insert into public.customers and public.bookings
   if (isSupabaseConfigured) {
     try {
-      // (a) Ensure customer exists in public.customers with complete stay verification details
+      // (a) Ensure customer exists in public.customers
       try {
-        await supabase.from('customers').upsert({
+        const { error: custUpsertErr } = await supabase.from('customers').upsert({
           id: resolvedCustomerId,
           customer_code: bookingData.customerCode || generateCustomerCode(),
           full_name: bookingData.customerName || 'Guest Customer',
@@ -2294,11 +2307,22 @@ export async function createBookingInDatabase(bookingData: {
           emergency_contact_phone: bookingData.emergencyContactPhone || null,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
+
+        if (custUpsertErr) {
+          // Fallback to minimal customer columns
+          await supabase.from('customers').upsert({
+            id: resolvedCustomerId,
+            customer_code: bookingData.customerCode || generateCustomerCode(),
+            full_name: bookingData.customerName || 'Guest Customer',
+            email: bookingData.customerEmail || '',
+            phone: bookingData.customerPhone || ''
+          }, { onConflict: 'id' });
+        }
       } catch (custErr) {
         console.warn('Notice upserting customer verification to Supabase:', custErr);
       }
 
-      // (b) Build rich payload for public.bookings (includes customer name, nights, days, guests, aadhar, room info)
+      // (b) Build rich payload for public.bookings
       const dbPayload: any = {
         booking_reference: bookingRef,
         customer_id: resolvedCustomerId,
@@ -2331,7 +2355,7 @@ export async function createBookingInDatabase(bookingData: {
         adr: adr,
         number_of_rooms: 1,
         total_amount: totalAmount,
-        booking_status: 'Confirmed',
+        booking_status: bookingStatus,
         payment_status: bookingData.paymentStatus || 'Paid',
         payment_method: bookingData.paymentMethod || 'Razorpay',
         razorpay_payment_id: bookingData.razorpayPaymentId || null,
@@ -2349,9 +2373,21 @@ export async function createBookingInDatabase(bookingData: {
       if (insertError) {
         console.warn('Notice from initial Supabase booking insert:', insertError);
 
-        // Case A: Missing columns in older schema (e.g. customer_name, nights not added yet)
-        if (insertError.code === '42703') {
-          const basePayload = {
+        // Case A: Missing columns or schema cache mismatch (400, PGRST204, 42703, etc.)
+        const isSchemaOrColumnError =
+          insertError.code === '42703' ||
+          insertError.code === 'PGRST204' ||
+          insertError.code === 'PGRST100' ||
+          insertError.code === '22P02' ||
+          (insertError as any).status === 400 ||
+          (insertError.message && (
+            insertError.message.includes('column') ||
+            insertError.message.includes('schema cache') ||
+            insertError.message.includes('Could not find')
+          ));
+
+        if (isSchemaOrColumnError) {
+          const basePayload: any = {
             booking_reference: bookingRef,
             customer_id: resolvedCustomerId,
             room_id: resolvedRoomId,
@@ -2361,8 +2397,8 @@ export async function createBookingInDatabase(bookingData: {
             number_of_guests: guests,
             number_of_rooms: 1,
             total_amount: totalAmount,
-            booking_status: 'Confirmed',
-            payment_status: 'Paid',
+            booking_status: bookingStatus,
+            payment_status: bookingData.paymentStatus || 'Paid',
             special_requests: bookingData.specialRequests || ''
           };
 
@@ -2375,6 +2411,28 @@ export async function createBookingInDatabase(bookingData: {
           if (!baseErr) {
             setRemoteTableStatus('ready');
             console.log('Successfully written booking to Supabase with base columns:', baseData);
+          } else {
+            console.warn('Notice from base booking insert fallback:', baseErr);
+            // Handle foreign key error on base payload if needed
+            if (baseErr.code === '23503') {
+              if (baseErr.message?.includes('room_type') || baseErr.details?.includes('room_types')) {
+                basePayload.room_type_id = null;
+              }
+              if (baseErr.message?.includes('room') || baseErr.details?.includes('rooms')) {
+                basePayload.room_id = null;
+              }
+              if (baseErr.message?.includes('customer') || baseErr.details?.includes('customers')) {
+                const { data: anyCust } = await supabase.from('customers').select('id').limit(1).maybeSingle();
+                if (anyCust?.id) {
+                  basePayload.customer_id = anyCust.id;
+                }
+              }
+              const { error: retryBaseErr } = await supabase.from('bookings').insert(basePayload);
+              if (!retryBaseErr) {
+                setRemoteTableStatus('ready');
+                console.log('Successfully written booking to Supabase on base fallback retry');
+              }
+            }
           }
         }
         // Case B: Foreign key violation on room_types
@@ -2382,20 +2440,11 @@ export async function createBookingInDatabase(bookingData: {
           insertError.code === '23503' &&
           (insertError.message?.includes('room_type') || insertError.details?.includes('room_types'))
         ) {
-          // 1) Find ANY existing room type ID in public.room_types
           const { data: anyRt } = await supabase.from('room_types').select('id').limit(1).maybeSingle();
           if (anyRt?.id) {
             dbPayload.room_type_id = anyRt.id;
           } else {
-            // Seed a room type right now
-            const { data: seededRt } = await supabase.from('room_types').insert({
-              name: bookingData.roomTypeName || 'Deluxe Room',
-              capacity: guests || 2,
-              base_price: adr || 200,
-              amenities: ['WiFi', 'Air Conditioning', 'Ensuite Bathroom'],
-              is_active: true
-            }).select('id').maybeSingle();
-            dbPayload.room_type_id = seededRt?.id || null;
+            dbPayload.room_type_id = null;
           }
 
           const { data: retry1, error: retry1Err } = await supabase
@@ -2408,7 +2457,6 @@ export async function createBookingInDatabase(bookingData: {
             setRemoteTableStatus('ready');
             console.log('Successfully inserted booking into Supabase after resolving room_type:', retry1);
           } else if (retry1Err.code === '23503') {
-            // Retry with null room_type_id if column is nullable
             dbPayload.room_type_id = null;
             await supabase.from('bookings').insert(dbPayload);
             setRemoteTableStatus('ready');
@@ -2419,13 +2467,18 @@ export async function createBookingInDatabase(bookingData: {
           insertError.code === '23503' &&
           (insertError.message?.includes('customer') || insertError.details?.includes('customers'))
         ) {
-          await supabase.from('customers').upsert({
-            id: resolvedCustomerId,
-            customer_code: bookingData.customerCode || generateCustomerCode(),
-            full_name: bookingData.customerName || 'Guest Customer',
-            email: bookingData.customerEmail || '',
-            phone: bookingData.customerPhone || ''
-          }, { onConflict: 'id' });
+          const { data: anyCust } = await supabase.from('customers').select('id').limit(1).maybeSingle();
+          if (anyCust?.id) {
+            dbPayload.customer_id = anyCust.id;
+          } else {
+            await supabase.from('customers').upsert({
+              id: resolvedCustomerId,
+              customer_code: bookingData.customerCode || generateCustomerCode(),
+              full_name: bookingData.customerName || 'Guest Customer',
+              email: bookingData.customerEmail || '',
+              phone: bookingData.customerPhone || ''
+            }, { onConflict: 'id' });
+          }
 
           const { error: retryCustErr } = await supabase.from('bookings').insert(dbPayload);
           if (!retryCustErr) {
@@ -2454,9 +2507,11 @@ export async function createBookingInDatabase(bookingData: {
 
   // 7. Save to local storage for instant offline availability
   const allBookings = getStoredBookings();
-  const existingIdx = allBookings.findIndex(b => b.bookingReference === newBooking.bookingReference);
+  const existingIdx = allBookings.findIndex(
+    b => b.bookingReference === newBooking.bookingReference || (newBooking.id && b.id === newBooking.id)
+  );
   if (existingIdx >= 0) {
-    allBookings[existingIdx] = newBooking;
+    allBookings[existingIdx] = { ...allBookings[existingIdx], ...newBooking };
   } else {
     allBookings.unshift(newBooking);
   }
@@ -2501,6 +2556,9 @@ export async function syncLocalBookingsToSupabase(): Promise<{ synced: number; t
     for (const b of missingBookings) {
       try {
         const res = await createBookingInDatabase({
+          id: b.id,
+          bookingReference: b.bookingReference,
+          status: b.status,
           customerId: b.customerId || 'c0000000-0000-0000-0000-000000000003',
           customerCode: b.customerCode,
           customerName: b.customerName,
@@ -2533,7 +2591,12 @@ export async function syncLocalBookingsToSupabase(): Promise<{ synced: number; t
           paymentMethod: b.paymentMethod || 'Razorpay',
           razorpayPaymentId: b.razorpayPaymentId,
           razorpayOrderId: b.razorpayOrderId,
-          razorpaySignature: b.razorpaySignature
+          razorpaySignature: b.razorpaySignature,
+          createdAt: b.createdAt,
+          cancelledAt: b.cancelledAt,
+          refundAmount: b.refundAmount,
+          cancellationFee: b.cancellationFee,
+          cancellationReason: b.cancellationReason
         });
         if (res.success) {
           syncedCount++;

@@ -9,4 +9,8 @@
     font-family: 'JetBrains Mono', monospace;
     font-variant-numeric: tabular-nums;
   }
+
+  .font-serif {
+    font-family: 'Cormorant Garamond', Georgia, Cambria, 'Times New Roman', serif;
+  }
 }

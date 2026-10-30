@@ -5,11 +5,13 @@ import { useAuth } from '../../context/AuthContext';
 interface LoginPageProps {
   onNavigateToRegister: () => void;
   onNavigateToAdminSetup?: () => void;
+  onNavigateToLanding?: () => void;
   onSuccess: () => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({
   onNavigateToRegister,
+  onNavigateToLanding,
   onSuccess
 }) => {
   const { login, resendConfirmationEmail, isLoading } = useAuth();
@@ -176,6 +178,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               <span>Create an account</span>
             </button>
           </div>
+
+          {onNavigateToLanding && (
+            <div className="mt-4 pt-3 text-center border-t border-slate-100/60">
+              <button
+                type="button"
+                onClick={onNavigateToLanding}
+                className="text-xs text-slate-500 hover:text-slate-800 transition-colors inline-flex items-center gap-1.5 font-medium"
+              >
+                <span>←</span>
+                <span>Return to Luxury Hotel Home</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

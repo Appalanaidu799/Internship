@@ -17,7 +17,8 @@ import {
   User,
   X,
   Shield,
-  Briefcase
+  Briefcase,
+  Compass
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useHotel } from '../../context/HotelContext';
@@ -27,13 +28,15 @@ interface SidebarProps {
   onSelectTab: (tabId: string) => void;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
+  onNavigateToLanding?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentTab,
   onSelectTab,
   isOpenMobile,
-  onCloseMobile
+  onCloseMobile,
+  onNavigateToLanding
 }) => {
   const { user } = useAuth();
   const { bookings } = useHotel();
@@ -190,6 +193,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </nav>
+
+        {/* View Hotel Website Link */}
+        {onNavigateToLanding && (
+          <div className="px-3 pb-2">
+            <button
+              onClick={() => {
+                if (isOpenMobile) onCloseMobile();
+                onNavigateToLanding();
+              }}
+              className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-amber-300/90 bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/20 transition-all group"
+            >
+              <div className="flex items-center gap-2.5">
+                <Compass className="w-3.5 h-3.5 text-amber-400 group-hover:rotate-45 transition-transform" />
+                <span className="font-serif tracking-wide text-[13px]">Luxury Hotel Web</span>
+              </div>
+              <span className="text-[10px] text-amber-300/70 font-mono">Visit →</span>
+            </button>
+          </div>
+        )}
 
         {/* Sidebar Footer Info */}
         <div className="p-4 border-t border-slate-800/80 bg-slate-950/40 text-[11px] text-slate-300">

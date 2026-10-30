@@ -16,10 +16,11 @@ import { useAuth } from '../../context/AuthContext';
 
 interface RegisterPageProps {
   onNavigateToLogin: () => void;
+  onNavigateToLanding?: () => void;
   onSuccess: () => void;
 }
 
-export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigateToLogin, onSuccess }) => {
+export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigateToLogin, onNavigateToLanding, onSuccess }) => {
   const { register, checkEmailExists, isLoading } = useAuth();
 
   // Basic form fields
@@ -380,15 +381,28 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigateToLogin, o
           </form>
 
           {/* Back to login */}
-          <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-            <button
-              type="button"
-              onClick={onNavigateToLogin}
-              className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-blue-600 font-medium transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Already have an account? Sign In</span>
-            </button>
+          <div className="mt-6 pt-4 border-t border-slate-100 text-center space-y-2">
+            <div>
+              <button
+                type="button"
+                onClick={onNavigateToLogin}
+                className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-blue-600 font-medium transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Already have an account? Sign In</span>
+              </button>
+            </div>
+            {onNavigateToLanding && (
+              <div>
+                <button
+                  type="button"
+                  onClick={onNavigateToLanding}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 font-medium transition-colors"
+                >
+                  <span>Return to Luxury Hotel Home</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

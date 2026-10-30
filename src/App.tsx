@@ -10,6 +10,7 @@ import { Sidebar } from './components/common/Sidebar';
 import { Header } from './components/common/Header';
 import { SupabaseDbBanner } from './components/common/SupabaseDbBanner';
 import { RoleBasedAiChatbot } from './components/common/RoleBasedAiChatbot';
+import { LuxuryHotelLandingPage } from './components/landing/LuxuryHotelLandingPage';
 
 // Admin Views
 import { AdminDashboardOverview } from './components/admin/AdminDashboardOverview';
@@ -42,7 +43,15 @@ import { CustomerProfile } from './components/customer/CustomerProfile';
 const AppContent: React.FC = () => {
   const { user, role, isAuthenticated, isLoading, isAdminConfigured, setIsAdminConfigured } = useAuth();
   const { roomTypes } = useHotel();
-  const [authView, setAuthView] = useState<'login' | 'register' | 'admin-setup'>('login');
+  const [viewMode, setViewMode] = useState<'landing' | 'login' | 'register' | 'app'>(() => {
+    const path = window.location.pathname.toLowerCase();
+    if (path === '/login') return 'login';
+    if (path === '/register') return 'register';
+    if (path.startsWith('/admin') || path.startsWith('/management') || path.startsWith('/customer')) {
+      return 'app';
+    }
+    return 'landing';
+  });
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Tab state per role
@@ -53,46 +62,90 @@ const AppContent: React.FC = () => {
   // Automated voice-booking prefill state
   const [bookingPrefill, setBookingPrefill] = useState<BookingPrefillData | null>(null);
 
-  // Enforce route protection and redirect unauthorized attempts to the user's own dashboard
+  // Navigation handlers
+  const navigateToLogin = useCallback(() => {
+    window.history.pushState(null, '', '/login');
+    setViewMode('login');
+  }, []);
+
+  const navigateToRegister = useCallback(() => {
+    window.history.pushState(null, '', '/register');
+    setViewMode('register');
+  }, []);
+
+  const navigateToLanding = useCallback(() => {
+    window.history.pushState(null, '', '/');
+    setViewMode('landing');
+  }, []);
+
+  const navigateToDashboard = useCallback(() => {
+    setViewMode('app');
+    if (role === 'admin') {
+      window.history.pushState(null, '', `/admin/dashboard${adminTab !== 'dashboard' ? `/${adminTab}` : ''}`);
+    } else if (role === 'management') {
+      window.history.pushState(null, '', `/management/dashboard${mgmtTab !== 'dashboard' ? `/${mgmtTab}` : ''}`);
+    } else if (role === 'customer') {
+      window.history.pushState(null, '', `/customer/dashboard${custTab !== 'home' ? `/${custTab}` : ''}`);
+    }
+  }, [role, adminTab, mgmtTab, custTab]);
+
+  // Enforce route protection and redirect unauthorized attempts to the appropriate page
   const enforceRouteProtection = useCallback(() => {
     if (isLoading) return;
 
     const path = window.location.pathname.toLowerCase();
 
+    // 1. Unauthenticated Visitor Handling
     if (!isAuthenticated || !role) {
-      if (path !== '/login' && path !== '/register') {
-        window.history.replaceState(null, '', authView === 'register' ? '/register' : '/login');
+      if (path === '/login') {
+        setViewMode('login');
+      } else if (path === '/register') {
+        setViewMode('register');
+      } else if (path === '/' || path === '/landing' || path === '/home') {
+        setViewMode('landing');
+        if (path !== '/' && path !== '/landing') {
+          window.history.replaceState(null, '', '/');
+        }
+      } else if (path.startsWith('/admin') || path.startsWith('/management') || path.startsWith('/customer')) {
+        // Attempting to access protected dashboard while logged out
+        window.history.replaceState(null, '', '/login');
+        setViewMode('login');
+      } else {
+        // Default landing page
+        window.history.replaceState(null, '', '/');
+        setViewMode('landing');
       }
       return;
     }
 
+    // 2. Authenticated User Handling
+    if (path === '/landing') {
+      setViewMode('landing');
+      return;
+    }
+
     // Role-based route redirection & protection
+    setViewMode('app');
     if (role === 'admin') {
-      if (path.startsWith('/management') || path.startsWith('/customer') || path === '/login' || path === '/') {
-        window.history.replaceState(null, '', `/admin/dashboard${adminTab !== 'dashboard' ? `/${adminTab}` : ''}`);
-      } else {
+      if (path.startsWith('/management') || path.startsWith('/customer') || path === '/login' || path === '/' || path === '/register') {
         window.history.replaceState(null, '', `/admin/dashboard${adminTab !== 'dashboard' ? `/${adminTab}` : ''}`);
       }
     } else if (role === 'management') {
-      if (path.startsWith('/admin') || path.startsWith('/customer') || path === '/login' || path === '/') {
-        window.history.replaceState(null, '', `/management/dashboard${mgmtTab !== 'dashboard' ? `/${mgmtTab}` : ''}`);
-      } else {
+      if (path.startsWith('/admin') || path.startsWith('/customer') || path === '/login' || path === '/' || path === '/register') {
         window.history.replaceState(null, '', `/management/dashboard${mgmtTab !== 'dashboard' ? `/${mgmtTab}` : ''}`);
       }
     } else if (role === 'customer') {
-      if (path.startsWith('/admin') || path.startsWith('/management') || path === '/login' || path === '/') {
-        window.history.replaceState(null, '', `/customer/dashboard${custTab !== 'home' ? `/${custTab}` : ''}`);
-      } else {
+      if (path.startsWith('/admin') || path.startsWith('/management') || path === '/login' || path === '/' || path === '/register') {
         window.history.replaceState(null, '', `/customer/dashboard${custTab !== 'home' ? `/${custTab}` : ''}`);
       }
     }
-  }, [isLoading, isAuthenticated, role, authView, adminTab, mgmtTab, custTab]);
+  }, [isLoading, isAuthenticated, role, adminTab, mgmtTab, custTab]);
 
   useEffect(() => {
     enforceRouteProtection();
   }, [enforceRouteProtection]);
 
-  // Listen to popstate (e.g. user manually changes browser URL)
+  // Listen to popstate (e.g. user clicks browser back/forward buttons)
   useEffect(() => {
     const handlePopState = () => {
       enforceRouteProtection();
@@ -118,15 +171,66 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // If unauthenticated, show Login or Registration
+  // 1. Landing Page View (accessible unauthenticated and authenticated via /landing or navigation)
+  if (viewMode === 'landing') {
+    return (
+      <>
+        <LuxuryHotelLandingPage
+          onNavigateToLogin={navigateToLogin}
+          onNavigateToRegister={navigateToRegister}
+          onGoToDashboard={isAuthenticated ? navigateToDashboard : undefined}
+        />
+        {isAuthenticated && (
+          <RoleBasedAiChatbot
+            onNavigateTab={tab => {
+              if (role === 'customer') setCustTab(tab);
+              else if (role === 'management') setMgmtTab(tab);
+              else if (role === 'admin') setAdminTab(tab);
+              navigateToDashboard();
+            }}
+            onSelectRoomForBooking={roomTypeId => {
+              const targetRoom = roomTypes.find(r => r.id === roomTypeId) || roomTypes[0];
+              setBookingPrefill({
+                roomType: targetRoom,
+                checkIn: new Date().toISOString().split('T')[0],
+                checkOut: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+                guests: 2
+              });
+              setCustTab('search-rooms');
+              navigateToDashboard();
+            }}
+            onTriggerBookingPrefill={data => {
+              const targetRoom = roomTypes.find(
+                r => r.id === data.roomTypeId ||
+                     r.name.toLowerCase() === data.roomTypeId.toLowerCase() ||
+                     r.name.toLowerCase().includes(data.roomTypeId.toLowerCase()) ||
+                     r.code.toLowerCase() === data.roomTypeId.toLowerCase()
+              ) || roomTypes[0];
+              setBookingPrefill({
+                roomType: targetRoom,
+                checkIn: data.checkIn,
+                checkOut: data.checkOut,
+                guests: data.guests
+              });
+              setCustTab('search-rooms');
+              navigateToDashboard();
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
+  // 2. Unauthenticated Login or Register Pages
   if (!isAuthenticated || !role) {
-    if (authView === 'register') {
+    if (viewMode === 'register') {
       return (
         <RegisterPage
-          onNavigateToLogin={() => setAuthView('login')}
+          onNavigateToLogin={navigateToLogin}
+          onNavigateToLanding={navigateToLanding}
           onSuccess={() => {
-            setAuthView('login');
-            enforceRouteProtection();
+            setViewMode('login');
+            window.history.replaceState(null, '', '/login');
           }}
         />
       );
@@ -134,7 +238,8 @@ const AppContent: React.FC = () => {
 
     return (
       <LoginPage
-        onNavigateToRegister={() => setAuthView('register')}
+        onNavigateToRegister={navigateToRegister}
+        onNavigateToLanding={navigateToLanding}
         onSuccess={() => enforceRouteProtection()}
       />
     );
@@ -311,6 +416,7 @@ const AppContent: React.FC = () => {
         onSelectTab={handleSelectTab}
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        onNavigateToLanding={navigateToLanding}
       />
 
       {/* Main Content Area */}

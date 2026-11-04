@@ -1461,10 +1461,7 @@ CRITICAL MULTILINGUAL INSTRUCTION:
   // =========================================================================
   // VITE DEV SERVER OR PRODUCTION STATIC SERVING
   // =========================================================================
-  const isProduction =
-    process.env.NODE_ENV === 'production' ||
-    (fs.existsSync(path.resolve(__dirname, 'dist', 'index.html')) &&
-      process.env.NODE_ENV !== 'development');
+  const isProduction = process.env.NODE_ENV === 'production';
 
   if (!isProduction) {
     const vite = await createViteServer({

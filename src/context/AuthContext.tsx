@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   supabase,
   saveLocalFallbackProfile,
@@ -21,10 +21,39 @@ import { UserProfile, Role, UserStatus, AuthState, CustomerProfileData } from '.
 export const DEFAULT_ADMIN_EMAIL = 'appalanaidu.dev@gmail.com';
 export const STORAGE_ADMIN_CONFIGURED = 'naidu_admin_setup_completed';
 
+/**
+ * Checks whether an authenticated profile contains all mandatory fields.
+ * If incomplete, user will be guided to the Profile Completion screen.
+ */
+export const checkIsProfileComplete = (profile: UserProfile | null): boolean => {
+  if (!profile) return false;
+  if (profile.role === 'admin' || profile.role === 'management') {
+    return Boolean(profile.full_name && profile.full_name.trim().length >= 2);
+  }
+  const hasName = Boolean(
+    profile.full_name &&
+    profile.full_name.trim().length >= 2 &&
+    !profile.full_name.includes('@')
+  );
+  const hasPhone = Boolean(profile.phone && profile.phone.trim().length >= 7);
+  return hasName && hasPhone;
+};
+
 interface AuthContextType extends AuthState {
   authenticatedUser: any | null;
   isAdminConfigured: boolean;
   setIsAdminConfigured: (configured: boolean) => void;
+  isRegistrationInProgress: boolean;
+  setIsRegistrationInProgress: (inProgress: boolean) => void;
+  isProfileComplete: boolean;
+  saveCompletedProfile: (data: {
+    fullName: string;
+    phone: string;
+    dateOfBirth?: string;
+    gender?: string;
+    city?: string;
+    state?: string;
+  }) => Promise<{ success: boolean; error?: string }>;
   setupAdmin: (fullName: string, phone: string, password?: string) => Promise<{ success: boolean; error?: string }>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string; isEmailUnconfirmed?: boolean; notFound?: boolean; role?: Role }>;
   resendConfirmationEmail: (email: string) => Promise<{ success: boolean; message: string; error?: string }>;
@@ -44,6 +73,32 @@ interface AuthContextType extends AuthState {
     alreadyExists?: boolean;
     isRateLimited?: boolean;
   }>;
+  sendEmailOtp: (email: string) => Promise<{
+    success: boolean;
+    error?: string;
+    message?: string;
+    alreadyExists?: boolean;
+    isRateLimited?: boolean;
+  }>;
+  verifyEmailOtp: (email: string, token: string) => Promise<{
+    success: boolean;
+    error?: string;
+    message?: string;
+    user?: any;
+    session?: any;
+    isExpired?: boolean;
+  }>;
+  completeRegistration: (data: {
+    fullName: string;
+    email: string;
+    phone?: string;
+    password: string;
+    verifiedUserId?: string;
+  }) => Promise<{
+    success: boolean;
+    error?: string;
+    role?: Role;
+  }>;
   registerWithGoogle: (googleEmail: string, fullName?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -61,6 +116,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [customerProfile, setCustomerProfile] = useState<CustomerProfileData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAdminConfigured, setIsAdminConfigured] = useState<boolean>(true);
+  const [isRegistrationInProgress, setIsRegistrationInProgressState] = useState<boolean>(false);
+  const isRegistrationInProgressRef = useRef<boolean>(false);
+
+  const setIsRegistrationInProgress = useCallback((inProgress: boolean) => {
+    isRegistrationInProgressRef.current = inProgress;
+    setIsRegistrationInProgressState(inProgress);
+  }, []);
+
+  const isProfileComplete = checkIsProfileComplete(userProfile);
+
   const [databaseStatus, setDatabaseStatus] = useState<{ connected: boolean; tableExists: boolean; message: string }>({
     connected: true,
     tableExists: getRemoteTableStatus() !== 'missing',
@@ -282,6 +347,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const {
       data: { subscription }
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Guard: If user is actively in the middle of registration (e.g. OTP verification stage),
+      // do not auto-set session or redirect until completeRegistration is explicitly submitted!
+      if (isRegistrationInProgressRef.current) {
+        return;
+      }
+
       if (event === 'SIGNED_OUT' || !session) {
         setAuthenticatedUser(null);
         setUserProfile(null);
@@ -832,6 +903,485 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Send Email OTP via Supabase Authentication
+  const sendEmailOtp = async (
+    email: string
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    message?: string;
+    alreadyExists?: boolean;
+    isRateLimited?: boolean;
+  }> => {
+    try {
+      const cleanEmail = email ? email.trim().toLowerCase() : '';
+      if (!cleanEmail) {
+        return { success: false, error: 'Please enter a valid email address.' };
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanEmail)) {
+        return { success: false, error: 'Please enter a valid email address.' };
+      }
+
+      // Check if email already registered in Supabase
+      const existsResult = await checkEmailExists(cleanEmail);
+      if (existsResult.exists) {
+        return {
+          success: false,
+          alreadyExists: true,
+          error: `The email "${cleanEmail}" is already registered. Please sign in instead.`
+        };
+      }
+
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.auth.signInWithOtp({
+          email: cleanEmail,
+          options: {
+            shouldCreateUser: true
+          }
+        });
+
+        if (error) {
+          const errMsg = error.message?.toLowerCase() || '';
+
+          // Rate-limiting check
+          if (error.status === 429 || errMsg.includes('rate limit') || errMsg.includes('security purposes')) {
+            return {
+              success: false,
+              isRateLimited: true,
+              error: 'Too many OTP requests. Please wait a moment before requesting another verification code.'
+            };
+          }
+
+          // Specific SMTP / Resend delivery error diagnosis
+          if (
+            errMsg.includes('magic link email') ||
+            errMsg.includes('confirmation email') ||
+            errMsg.includes('error sending')
+          ) {
+            return {
+              success: false,
+              error:
+                'Failed to send verification email. Your Supabase Resend Custom SMTP could not deliver the message. Please ensure in Supabase Dashboard (Authentication → SMTP Settings) that SMTP Port is set to 587 (or 465) and Sender Email uses a domain verified in Resend.'
+            };
+          }
+
+          // Fallback if OTP provider is unconfigured
+          if (errMsg.includes('signups not allowed') || errMsg.includes('otp disabled') || errMsg.includes('provider is not enabled')) {
+            const tempPwd = `OtpReg_${Date.now()}!${Math.random().toString(36).substring(2, 8)}`;
+            const signUpRes = await supabase.auth.signUp({
+              email: cleanEmail,
+              password: tempPwd,
+              options: {
+                data: { role: 'customer' }
+              }
+            });
+            if (!signUpRes.error) {
+              return {
+                success: true,
+                message: 'Verification code sent successfully. Please check your email for the OTP.'
+              };
+            }
+          }
+
+          return {
+            success: false,
+            error: error.message || 'Failed to send verification code. Please try again.'
+          };
+        }
+
+        return {
+          success: true,
+          message: 'Verification code sent successfully. Please check your email for the OTP.'
+        };
+      }
+
+      return {
+        success: false,
+        error: 'Supabase authentication service is not configured. Please verify VITE_SUPABASE_URL and key.'
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'Failed to send verification code. Please try again.'
+      };
+    }
+  };
+
+  // Verify OTP via Supabase Authentication
+  const verifyEmailOtp = async (
+    email: string,
+    token: string
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    message?: string;
+    user?: any;
+    session?: any;
+    isExpired?: boolean;
+  }> => {
+    try {
+      const cleanEmail = email ? email.trim().toLowerCase() : '';
+      const cleanToken = token ? token.replace(/\s+/g, '').trim() : '';
+
+      if (!cleanEmail) {
+        return { success: false, error: 'Please enter a valid email address.' };
+      }
+      if (!cleanToken || cleanToken.length !== 8 || !/^\d{8}$/.test(cleanToken)) {
+        return { success: false, error: 'Please enter the complete 8-digit verification code.' };
+      }
+
+      if (isSupabaseConfigured) {
+        // 1. Primary check: type 'email' (from signInWithOtp)
+        let { data, error } = await supabase.auth.verifyOtp({
+          email: cleanEmail,
+          token: cleanToken,
+          type: 'email'
+        });
+
+        // 2. Secondary check: type 'signup' (if GoTrue routed via confirmation signup template)
+        if (error) {
+          const signupAttempt = await supabase.auth.verifyOtp({
+            email: cleanEmail,
+            token: cleanToken,
+            type: 'signup'
+          });
+          if (!signupAttempt.error && signupAttempt.data?.user) {
+            data = signupAttempt.data;
+            error = null;
+          }
+        }
+
+        if (error) {
+          const errorMsg = error.message?.toLowerCase() || '';
+          if (errorMsg.includes('expired')) {
+            return {
+              success: false,
+              isExpired: true,
+              error: 'Verification code expired. Please request a new one.'
+            };
+          }
+          if (errorMsg.includes('invalid') || errorMsg.includes('token') || errorMsg.includes('otp')) {
+            return {
+              success: false,
+              error: 'Invalid verification code. Please try again.'
+            };
+          }
+          return {
+            success: false,
+            error: error.message || 'Invalid verification code. Please try again.'
+          };
+        }
+
+        if (data?.user) {
+          return {
+            success: true,
+            user: data.user,
+            session: data.session,
+            message: 'Email verified successfully!'
+          };
+        }
+      }
+
+      return {
+        success: false,
+        error: 'Invalid verification code. Please try again.'
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'Verification failed. Please try again.'
+      };
+    }
+  };
+
+  // Complete Registration after email OTP is verified
+  const completeRegistration = async ({
+    fullName,
+    email,
+    phone = '',
+    password,
+    verifiedUserId
+  }: {
+    fullName: string;
+    email: string;
+    phone?: string;
+    password: string;
+    verifiedUserId?: string;
+  }): Promise<{ success: boolean; error?: string; role?: Role }> => {
+    setIsLoading(true);
+    try {
+      const cleanEmail = email ? email.trim().toLowerCase() : '';
+      const cleanPassword = password ? password.trim() : '';
+      const cleanFullName = fullName ? fullName.trim() : '';
+      const cleanPhone = phone ? phone.trim() : '';
+
+      if (!cleanFullName) {
+        setIsLoading(false);
+        return { success: false, error: 'Please enter your full name.' };
+      }
+      if (!cleanEmail) {
+        setIsLoading(false);
+        return { success: false, error: 'Please enter a valid email address.' };
+      }
+      if (!verifiedUserId) {
+        setIsLoading(false);
+        return { success: false, error: 'Please verify your email before creating your account.' };
+      }
+      if (!cleanPassword || cleanPassword.length < 6) {
+        setIsLoading(false);
+        return { success: false, error: 'Password must be at least 6 characters long.' };
+      }
+
+      // Persist password credential for future seamless sign-in
+      saveUserCredential(cleanEmail, cleanPassword);
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.auth.updateUser({
+            password: cleanPassword,
+            data: {
+              full_name: cleanFullName,
+              phone: cleanPhone,
+              role: 'customer'
+            }
+          });
+        } catch (e) {
+          console.warn('Notice updating password in Supabase Auth:', e);
+        }
+      }
+
+      // Prepare user profile (Role is ALWAYS customer for public registration)
+      const profilePayload: UserProfile = {
+        id: verifiedUserId,
+        full_name: cleanFullName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        role: 'customer',
+        status: 'active',
+        profile_image: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanFullName)}`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase
+            .from('users')
+            .upsert({
+              id: profilePayload.id,
+              full_name: profilePayload.full_name,
+              email: profilePayload.email,
+              phone: profilePayload.phone,
+              role: 'customer',
+              status: 'active',
+              profile_image: profilePayload.profile_image,
+              created_at: profilePayload.created_at,
+              updated_at: profilePayload.updated_at
+            }, { onConflict: 'email' });
+        } catch (insertError) {
+          console.warn('Notice saving to public.users:', insertError);
+        }
+
+        // Also upsert to profiles table if present in Supabase
+        try {
+          await supabase
+            .from('profiles')
+            .upsert({
+              id: profilePayload.id,
+              full_name: profilePayload.full_name,
+              email: profilePayload.email,
+              phone: profilePayload.phone,
+              role: 'customer',
+              updated_at: profilePayload.updated_at
+            }, { onConflict: 'id' });
+        } catch {}
+      }
+
+      saveLocalFallbackProfile(profilePayload);
+
+      let cp: any = null;
+      try {
+        cp = await ensureCustomerProfileExists({
+          id: profilePayload.id,
+          email: cleanEmail,
+          fullName: cleanFullName,
+          phone: cleanPhone
+        });
+      } catch {}
+
+      localStorage.setItem(
+        STORAGE_KEY_SESSION,
+        JSON.stringify({
+          id: profilePayload.id,
+          email: profilePayload.email,
+          role: 'customer',
+          timestamp: Date.now()
+        })
+      );
+
+      // Successfully finished registration flow
+      setIsRegistrationInProgress(false);
+      setAuthenticatedUser({ id: profilePayload.id, email: profilePayload.email });
+      setUserProfile(profilePayload);
+      if (cp) setCustomerProfile(cp);
+      setIsLoading(false);
+
+      return { success: true, role: 'customer' };
+    } catch (err: any) {
+      setIsLoading(false);
+      return { success: false, error: err?.message || 'Failed to complete registration.' };
+    }
+  };
+
+  // Update Customer Profile handler
+  const updateCustomerProfile = useCallback(
+    async (data: Partial<CustomerProfileData>): Promise<{ success: boolean; error?: string }> => {
+      const targetId = customerProfile?.id || userProfile?.id;
+      if (!targetId) {
+        return { success: false, error: 'No active authenticated user session.' };
+      }
+
+      try {
+        const res = await syncCustomerProfileToDatabase({
+          ...data,
+          id: targetId
+        });
+
+        if (res.data) {
+          setCustomerProfile(res.data);
+          if (data.full_name) {
+            setUserProfile(prev => prev ? { ...prev, full_name: data.full_name! } : null);
+          }
+        }
+
+        return { success: res.success, error: res.error };
+      } catch (err: any) {
+        return { success: false, error: err?.message || 'Failed to update profile.' };
+      }
+    },
+    [customerProfile, userProfile]
+  );
+
+  // Save Completed Profile handler (for Profile Completion flow)
+  const saveCompletedProfile = useCallback(
+    async (data: {
+      fullName: string;
+      phone: string;
+      dateOfBirth?: string;
+      gender?: string;
+      city?: string;
+      state?: string;
+    }): Promise<{ success: boolean; error?: string }> => {
+      setIsLoading(true);
+      try {
+        const targetUserId = authenticatedUser?.id || userProfile?.id;
+        const targetEmail = authenticatedUser?.email || userProfile?.email;
+
+        if (!targetUserId || !targetEmail) {
+          setIsLoading(false);
+          return { success: false, error: 'User session not found. Please log in again.' };
+        }
+
+        const cleanName = data.fullName.trim();
+        const cleanPhone = data.phone.trim();
+        const existingRole = userProfile?.role || 'customer';
+
+        if (isSupabaseConfigured) {
+          try {
+            await supabase.auth.updateUser({
+              data: {
+                full_name: cleanName,
+                phone: cleanPhone
+              }
+            });
+          } catch {}
+        }
+
+        const updatedProfile: UserProfile = {
+          id: targetUserId,
+          full_name: cleanName,
+          email: targetEmail.toLowerCase().trim(),
+          phone: cleanPhone,
+          role: existingRole,
+          status: userProfile?.status || 'active',
+          profile_image:
+            userProfile?.profile_image ||
+            `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`,
+          created_at: userProfile?.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        if (isSupabaseConfigured) {
+          try {
+            await supabase.from('users').upsert(
+              {
+                id: updatedProfile.id,
+                full_name: updatedProfile.full_name,
+                email: updatedProfile.email,
+                phone: updatedProfile.phone,
+                role: updatedProfile.role,
+                status: updatedProfile.status,
+                profile_image: updatedProfile.profile_image,
+                created_at: updatedProfile.created_at,
+                updated_at: updatedProfile.updated_at
+              },
+              { onConflict: 'email' }
+            );
+          } catch (e) {
+            console.warn('Notice updating public.users:', e);
+          }
+
+          try {
+            await supabase.from('profiles').upsert(
+              {
+                id: updatedProfile.id,
+                full_name: updatedProfile.full_name,
+                email: updatedProfile.email,
+                phone: updatedProfile.phone,
+                role: updatedProfile.role,
+                updated_at: updatedProfile.updated_at
+              },
+              { onConflict: 'id' }
+            );
+          } catch {}
+        }
+
+        if (existingRole === 'customer') {
+          const custPayload: Partial<CustomerProfileData> = {
+            full_name: cleanName,
+            phone: cleanPhone,
+            date_of_birth: data.dateOfBirth,
+            gender: data.gender,
+            city: data.city,
+            state: data.state
+          };
+          await updateCustomerProfile(custPayload);
+        }
+
+        saveLocalFallbackProfile(updatedProfile);
+        localStorage.setItem(
+          STORAGE_KEY_SESSION,
+          JSON.stringify({
+            id: updatedProfile.id,
+            email: updatedProfile.email,
+            role: updatedProfile.role,
+            timestamp: Date.now()
+          })
+        );
+
+        setUserProfile(updatedProfile);
+        setIsLoading(false);
+        return { success: true };
+      } catch (err: any) {
+        setIsLoading(false);
+        return { success: false, error: err?.message || 'Failed to save profile.' };
+      }
+    },
+    [authenticatedUser, userProfile, updateCustomerProfile]
+  );
+
   // Google Sign-In placeholder for interface compatibility
   const signInWithGoogle = async () => {
     return { success: false, error: 'Google sign-in is disabled. Please sign in with email and password.' };
@@ -951,35 +1501,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   };
 
-  // Update Customer Profile handler
-  const updateCustomerProfile = useCallback(
-    async (data: Partial<CustomerProfileData>): Promise<{ success: boolean; error?: string }> => {
-      const targetId = customerProfile?.id || userProfile?.id;
-      if (!targetId) {
-        return { success: false, error: 'No active authenticated user session.' };
-      }
-
-      try {
-        const res = await syncCustomerProfileToDatabase({
-          ...data,
-          id: targetId
-        });
-
-        if (res.data) {
-          setCustomerProfile(res.data);
-          if (data.full_name) {
-            setUserProfile(prev => prev ? { ...prev, full_name: data.full_name! } : null);
-          }
-        }
-
-        return { success: res.success, error: res.error };
-      } catch (err: any) {
-        return { success: false, error: err?.message || 'Failed to update profile.' };
-      }
-    },
-    [customerProfile, userProfile]
-  );
-
   const value: AuthContextType = {
     isAuthenticated: Boolean(authenticatedUser && userProfile && userProfile.status === 'active'),
     user: userProfile
@@ -1001,6 +1522,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     authenticatedUser,
     isAdminConfigured,
     setIsAdminConfigured,
+    isRegistrationInProgress,
+    setIsRegistrationInProgress,
+    isProfileComplete,
+    saveCompletedProfile,
     setupAdmin,
     login,
     resendConfirmationEmail,
@@ -1009,6 +1534,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkEmailExists,
     updateCustomerProfile,
     register,
+    sendEmailOtp,
+    verifyEmailOtp,
+    completeRegistration,
     registerWithGoogle,
     logout,
     refreshProfile,

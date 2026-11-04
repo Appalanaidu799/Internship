@@ -4,6 +4,7 @@ import { HotelProvider, useHotel } from './context/HotelContext';
 import { RoomType } from './types/hotel';
 import { LoginPage } from './components/auth/LoginPage';
 import { RegisterPage } from './components/auth/RegisterPage';
+import { ProfileCompletionPage } from './components/auth/ProfileCompletionPage';
 import { AdminSetupPage } from './components/auth/AdminSetupPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Sidebar } from './components/common/Sidebar';
@@ -41,12 +42,22 @@ import { CustomerAiAssistant } from './components/customer/CustomerAiAssistant';
 import { CustomerProfile } from './components/customer/CustomerProfile';
 
 const AppContent: React.FC = () => {
-  const { user, role, isAuthenticated, isLoading, isAdminConfigured, setIsAdminConfigured } = useAuth();
+  const {
+    user,
+    role,
+    isAuthenticated,
+    isLoading,
+    isAdminConfigured,
+    setIsAdminConfigured,
+    isRegistrationInProgress,
+    isProfileComplete
+  } = useAuth();
   const { roomTypes } = useHotel();
-  const [viewMode, setViewMode] = useState<'landing' | 'login' | 'register' | 'app'>(() => {
+  const [viewMode, setViewMode] = useState<'landing' | 'login' | 'register' | 'profile-completion' | 'app'>(() => {
     const path = window.location.pathname.toLowerCase();
     if (path === '/login') return 'login';
     if (path === '/register') return 'register';
+    if (path === '/profile-completion') return 'profile-completion';
     if (path.startsWith('/admin') || path.startsWith('/management') || path.startsWith('/customer')) {
       return 'app';
     }
@@ -78,6 +89,11 @@ const AppContent: React.FC = () => {
     setViewMode('landing');
   }, []);
 
+  const navigateToProfileCompletion = useCallback(() => {
+    window.history.pushState(null, '', '/profile-completion');
+    setViewMode('profile-completion');
+  }, []);
+
   const navigateToDashboard = useCallback(() => {
     setViewMode('app');
     if (role === 'admin') {
@@ -93,6 +109,13 @@ const AppContent: React.FC = () => {
   const enforceRouteProtection = useCallback(() => {
     if (isLoading) return;
 
+    // While registration is actively in progress (e.g. entering Full Name, Phone, Password after OTP verification),
+    // prevent premature redirection away from the registration form.
+    if (isRegistrationInProgress) {
+      setViewMode('register');
+      return;
+    }
+
     const path = window.location.pathname.toLowerCase();
 
     // 1. Unauthenticated Visitor Handling
@@ -106,6 +129,9 @@ const AppContent: React.FC = () => {
         if (path !== '/' && path !== '/landing') {
           window.history.replaceState(null, '', '/');
         }
+      } else if (path === '/profile-completion') {
+        window.history.replaceState(null, '', '/login');
+        setViewMode('login');
       } else if (path.startsWith('/admin') || path.startsWith('/management') || path.startsWith('/customer')) {
         // Attempting to access protected dashboard while logged out
         window.history.replaceState(null, '', '/login');
@@ -124,22 +150,31 @@ const AppContent: React.FC = () => {
       return;
     }
 
-    // Role-based route redirection & protection
+    // 3. Incomplete Profile Handling: Route authenticated users with missing profile information to complete their profile
+    if (!isProfileComplete) {
+      setViewMode('profile-completion');
+      if (path !== '/profile-completion') {
+        window.history.replaceState(null, '', '/profile-completion');
+      }
+      return;
+    }
+
+    // 4. Completed Profile: Role-based route redirection & protection
     setViewMode('app');
     if (role === 'admin') {
-      if (path.startsWith('/management') || path.startsWith('/customer') || path === '/login' || path === '/' || path === '/register') {
+      if (path.startsWith('/management') || path.startsWith('/customer') || path === '/login' || path === '/' || path === '/register' || path === '/profile-completion') {
         window.history.replaceState(null, '', `/admin/dashboard${adminTab !== 'dashboard' ? `/${adminTab}` : ''}`);
       }
     } else if (role === 'management') {
-      if (path.startsWith('/admin') || path.startsWith('/customer') || path === '/login' || path === '/' || path === '/register') {
+      if (path.startsWith('/admin') || path.startsWith('/customer') || path === '/login' || path === '/' || path === '/register' || path === '/profile-completion') {
         window.history.replaceState(null, '', `/management/dashboard${mgmtTab !== 'dashboard' ? `/${mgmtTab}` : ''}`);
       }
     } else if (role === 'customer') {
-      if (path.startsWith('/admin') || path.startsWith('/management') || path === '/login' || path === '/' || path === '/register') {
+      if (path.startsWith('/admin') || path.startsWith('/management') || path === '/login' || path === '/' || path === '/register' || path === '/profile-completion') {
         window.history.replaceState(null, '', `/customer/dashboard${custTab !== 'home' ? `/${custTab}` : ''}`);
       }
     }
-  }, [isLoading, isAuthenticated, role, adminTab, mgmtTab, custTab]);
+  }, [isLoading, isRegistrationInProgress, isAuthenticated, role, isProfileComplete, adminTab, mgmtTab, custTab]);
 
   useEffect(() => {
     enforceRouteProtection();
@@ -221,25 +256,32 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 2. Unauthenticated Login or Register Pages
-  if (!isAuthenticated || !role) {
-    if (viewMode === 'register') {
-      return (
-        <RegisterPage
-          onNavigateToLogin={navigateToLogin}
-          onNavigateToLanding={navigateToLanding}
-          onSuccess={() => {
-            setViewMode('login');
-            window.history.replaceState(null, '', '/login');
-          }}
-        />
-      );
-    }
+  // 2. Active Registration or Register View Mode
+  if (isRegistrationInProgress || (!isAuthenticated && viewMode === 'register')) {
+    return (
+      <RegisterPage
+        onNavigateToLogin={navigateToLogin}
+        onNavigateToLanding={navigateToLanding}
+        onSuccess={() => enforceRouteProtection()}
+      />
+    );
+  }
 
+  // 3. Unauthenticated Login Page
+  if (!isAuthenticated || !role) {
     return (
       <LoginPage
         onNavigateToRegister={navigateToRegister}
         onNavigateToLanding={navigateToLanding}
+        onSuccess={() => enforceRouteProtection()}
+      />
+    );
+  }
+
+  // 4. Authenticated User Profile Completion View
+  if (viewMode === 'profile-completion' || !isProfileComplete) {
+    return (
+      <ProfileCompletionPage
         onSuccess={() => enforceRouteProtection()}
       />
     );

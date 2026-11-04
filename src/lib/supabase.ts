@@ -1226,6 +1226,56 @@ class MockSupabaseClient {
       };
     },
 
+    signInWithOtp: async ({ email }: { email: string; options?: any }) => {
+      await new Promise(r => setTimeout(r, 120));
+      const cleanEmail = email.trim().toLowerCase();
+      safeStorage.setItem(`mock_otp_${cleanEmail}`, JSON.stringify({ otp: '12345678', expiresAt: Date.now() + 10 * 60 * 1000 }));
+      return { data: { user: null, session: null }, error: null };
+    },
+
+    verifyOtp: async ({ email, token }: { email: string; token: string; type?: string }) => {
+      await new Promise(r => setTimeout(r, 120));
+      const cleanEmail = email.trim().toLowerCase();
+      const raw = safeStorage.getItem(`mock_otp_${cleanEmail}`);
+      if (!raw) {
+        return { data: { user: null, session: null }, error: { message: 'Invalid verification code. Please try again.' } };
+      }
+      const parsed = JSON.parse(raw);
+      if (Date.now() > parsed.expiresAt) {
+        return { data: { user: null, session: null }, error: { message: 'Verification code expired. Please request a new one.' } };
+      }
+      if (token !== parsed.otp && token !== '12345678') {
+        return { data: { user: null, session: null }, error: { message: 'Invalid verification code. Please try again.' } };
+      }
+      const users = getStoredUsers();
+      let user = users.find(u => u.email.toLowerCase() === cleanEmail);
+      if (!user) {
+        user = {
+          id: `u-${Date.now()}`,
+          full_name: cleanEmail.split('@')[0],
+          email: cleanEmail,
+          phone: '',
+          role: 'customer',
+          status: 'active',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        users.push(user);
+        saveStoredUsers(users);
+      }
+      const mockSession = {
+        access_token: `mock_jwt_${Date.now()}`,
+        user: { id: user.id, email: user.email, user_metadata: { full_name: user.full_name } }
+      };
+      localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(mockSession));
+      return { data: { user: mockSession.user, session: mockSession }, error: null };
+    },
+
+    updateUser: async (attributes: any) => {
+      await new Promise(r => setTimeout(r, 80));
+      return { data: { user: {} }, error: null };
+    },
+
     signUp: async ({ email, options }: { email: string; password?: string; options?: any }) => {
       await new Promise(r => setTimeout(r, 100));
       const cleanEmail = email.trim().toLowerCase();

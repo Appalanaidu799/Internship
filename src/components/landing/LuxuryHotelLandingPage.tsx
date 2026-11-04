@@ -327,7 +327,7 @@ export const LuxuryHotelLandingPage: React.FC<LuxuryHotelLandingPageProps> = ({
           <img
             src={HERO_IMAGE}
             alt="Luxury Hotel Exterior & Architecture"
-            className="w-full h-full object-cover object-center scale-105"
+            className="w-full h-full object-cover object-center scale-105 animate-pulse duration-[10000ms]"
           />
           {/* Subtle cinematic overlays */}
           <div className="absolute inset-0 bg-gradient-to-t from-[#0b0f17] via-[#0b0f17]/50 to-[#0b0f17]/40" />
@@ -1086,7 +1086,7 @@ export const LuxuryHotelLandingPage: React.FC<LuxuryHotelLandingPageProps> = ({
                 </div>
                 <div className="flex items-center gap-2.5">
                   <Mail className="w-3.5 h-3.5 text-[#c5a880] shrink-0" />
-                  <span>appalanaidu.dev@gmail.com</span>
+                  <span>reservations@naiduhotel.com</span>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <Clock className="w-3.5 h-3.5 text-[#c5a880] shrink-0 mt-0.5" />
